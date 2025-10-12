@@ -1,0 +1,259 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Player Stats Table</title>
+        <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.css">
+        <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.js"></script>
+        <style>
+            body {
+                font-family: sans-serif;
+            }
+            #player_stats_table {
+                border-collapse: collapse;
+                width: 100%;
+            }
+            #player_stats_table th, #player_stats_table td {
+                border: 1px solid #666; /* Darker border color for cells */
+                padding: 8px;
+                text-align: left;
+            }
+            #player_stats_table th {
+                background-color: #4CAF50; /* Darker green background */
+                color: white; /* White text color for better contrast */
+            }
+            #player_stats_table tbody tr:nth-child(even) {
+                background-color: #f9f9f9;
+                color: #333;
+            }
+            #player_stats_table tbody tr:nth-child(odd) {
+                background-color: #f9f9f9;
+                color: #333
+            }
+            #player_stats_table tbody tr:hover {
+                background-color: #ddd;
+            }
+        </style>
+        <script>
+            $(document).ready( function () {
+                $('#player_stats_table').DataTable();
+            } );
+        </script>
+    </head>
+    <body>
+        <h2>Player Statistics (2024)</h2>
+        <table id="player_stats_table" class="display compact">
+            <thead>
+                <tr>
+                    <th>name</th><th>total_games_played</th><th>total_unique_games</th><th>total_wins</th><th>total_playing_time_min</th><th>win_percentage</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+    <tr>
+      <td>Josepe Franco Gerent</td>
+      <td>169</td>
+      <td>57</td>
+      <td>87</td>
+      <td>26</td>
+      <td>51.479290</td>
+    </tr>
+    <tr>
+      <td>Denise Soledade Jornada</td>
+      <td>151</td>
+      <td>48</td>
+      <td>75</td>
+      <td>26</td>
+      <td>49.668874</td>
+    </tr>
+    <tr>
+      <td>Lucas</td>
+      <td>47</td>
+      <td>21</td>
+      <td>27</td>
+      <td>0</td>
+      <td>57.446809</td>
+    </tr>
+    <tr>
+      <td>Raiane</td>
+      <td>47</td>
+      <td>21</td>
+      <td>24</td>
+      <td>0</td>
+      <td>51.063830</td>
+    </tr>
+    <tr>
+      <td>Liege</td>
+      <td>43</td>
+      <td>26</td>
+      <td>13</td>
+      <td>0</td>
+      <td>30.232558</td>
+    </tr>
+    <tr>
+      <td>Letícia Rocha</td>
+      <td>42</td>
+      <td>20</td>
+      <td>17</td>
+      <td>0</td>
+      <td>40.476190</td>
+    </tr>
+    <tr>
+      <td>Davi Pinheiro</td>
+      <td>42</td>
+      <td>20</td>
+      <td>17</td>
+      <td>0</td>
+      <td>40.476190</td>
+    </tr>
+    <tr>
+      <td>Bruno Silveira</td>
+      <td>42</td>
+      <td>25</td>
+      <td>13</td>
+      <td>0</td>
+      <td>30.952381</td>
+    </tr>
+    <tr>
+      <td>Davi Jornada Gerent</td>
+      <td>19</td>
+      <td>12</td>
+      <td>7</td>
+      <td>0</td>
+      <td>36.842105</td>
+    </tr>
+    <tr>
+      <td>Michelle Mori</td>
+      <td>15</td>
+      <td>10</td>
+      <td>5</td>
+      <td>0</td>
+      <td>33.333333</td>
+    </tr>
+    <tr>
+      <td>Alessandro</td>
+      <td>15</td>
+      <td>10</td>
+      <td>6</td>
+      <td>0</td>
+      <td>40.000000</td>
+    </tr>
+    <tr>
+      <td>Jeremias Goedert</td>
+      <td>8</td>
+      <td>4</td>
+      <td>3</td>
+      <td>0</td>
+      <td>37.500000</td>
+    </tr>
+    <tr>
+      <td>Cristina Maya Tinoco</td>
+      <td>8</td>
+      <td>4</td>
+      <td>4</td>
+      <td>0</td>
+      <td>50.000000</td>
+    </tr>
+    <tr>
+      <td>Jacks Castro</td>
+      <td>8</td>
+      <td>7</td>
+      <td>3</td>
+      <td>26</td>
+      <td>37.500000</td>
+    </tr>
+    <tr>
+      <td>Lúcia</td>
+      <td>8</td>
+      <td>7</td>
+      <td>4</td>
+      <td>26</td>
+      <td>50.000000</td>
+    </tr>
+    <tr>
+      <td>Diego Jornada Gerent</td>
+      <td>8</td>
+      <td>5</td>
+      <td>3</td>
+      <td>0</td>
+      <td>37.500000</td>
+    </tr>
+    <tr>
+      <td>Guilherme Marques</td>
+      <td>7</td>
+      <td>5</td>
+      <td>3</td>
+      <td>0</td>
+      <td>42.857143</td>
+    </tr>
+    <tr>
+      <td>Nalu Franco Gerent</td>
+      <td>5</td>
+      <td>2</td>
+      <td>2</td>
+      <td>0</td>
+      <td>40.000000</td>
+    </tr>
+    <tr>
+      <td>Luis</td>
+      <td>4</td>
+      <td>2</td>
+      <td>4</td>
+      <td>0</td>
+      <td>100.000000</td>
+    </tr>
+    <tr>
+      <td>Sergio</td>
+      <td>4</td>
+      <td>2</td>
+      <td>4</td>
+      <td>0</td>
+      <td>100.000000</td>
+    </tr>
+    <tr>
+      <td>Moisés da Rosa</td>
+      <td>3</td>
+      <td>3</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0.000000</td>
+    </tr>
+    <tr>
+      <td>Aline Lima</td>
+      <td>3</td>
+      <td>3</td>
+      <td>2</td>
+      <td>0</td>
+      <td>66.666667</td>
+    </tr>
+    <tr>
+      <td>Keth</td>
+      <td>2</td>
+      <td>2</td>
+      <td>1</td>
+      <td>0</td>
+      <td>50.000000</td>
+    </tr>
+    <tr>
+      <td>Bruna Meeps ZN</td>
+      <td>1</td>
+      <td>1</td>
+      <td>1</td>
+      <td>0</td>
+      <td>100.000000</td>
+    </tr>
+    <tr>
+      <td>Tom Meeps ZN</td>
+      <td>1</td>
+      <td>1</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0.000000</td>
+    </tr>
+  
+            </tbody>
+        </table>
+    </body>
+    </html>
+    
