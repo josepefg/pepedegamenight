@@ -34,7 +34,7 @@ function destroyTable() {
   }
 }
 
-/* ✅ indexa SEMPRE por string pra não ter mismatch number vs string */
+/* ✅ indexa SEMPRE por string (evita mismatch number vs string) */
 function indexByIdString(arr) {
   const m = new Map();
   (arr || []).forEach(o => {
@@ -133,10 +133,15 @@ function safeNameGame(gameId) {
   return raw.gamesById.get(k)?.name || `Game ${k}`;
 }
 
-/* ✅ identifica coop via campo "isCoop" no array games */
+/* ✅ coop = campo "cooperative" no JSON */
 function isCoopGame(gameId) {
   const g = raw.gamesById.get(sid(gameId));
-  return !!(g && g.isCoop === true);
+  // aceita true boolean OU string "true"/"1"
+  const v = g ? g.cooperative : false;
+  if (v === true) return true;
+  if (typeof v === "string") return ["true", "1", "yes", "sim"].includes(v.toLowerCase());
+  if (typeof v === "number") return v === 1;
+  return false;
 }
 
 /* =========================
@@ -201,7 +206,7 @@ function applyFilters() {
   const minT = el("fMinTime").value !== "" ? Number(el("fMinTime").value) : null;
   const maxT = el("fMaxTime").value !== "" ? Number(el("fMaxTime").value) : null;
 
-  const plSelected = [...el("fPlayers").selectedOptions].map(o => sid(o.value)); // strings
+  const plSelected = [...el("fPlayers").selectedOptions].map(o => sid(o.value));
   const plMode = getMode("plMode");
 
   filteredPlays = raw.plays.filter(play => {
@@ -242,7 +247,7 @@ function applyFilters() {
 }
 
 /* =========================
-   PARTIDAS (sem rating)
+   PARTIDAS
 ========================= */
 function renderPartidas() {
   destroyTable();
@@ -340,7 +345,7 @@ function renderJogadores() {
 }
 
 /* =========================
-   AGREGADOR POR JOGO (✅ filtro coop AQUI)
+   AGREGADOR POR JOGO (✅ filtro coop aqui)
 ========================= */
 function aggregateByGame() {
   const coopEl = el("fIncludeCoop");
@@ -352,7 +357,7 @@ function aggregateByGame() {
     const gameId = sid(play.gameRefId);
     if (!gameId) continue;
 
-    if (!includeCoop && isCoopGame(gameId)) continue; // ✅ filtro efetivo
+    if (!includeCoop && isCoopGame(gameId)) continue; // ✅
 
     if (!agg.has(gameId)) {
       agg.set(gameId, {
