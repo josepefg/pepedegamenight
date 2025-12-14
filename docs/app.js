@@ -12,6 +12,7 @@ const DEFAULTS = {
   plMode: "OR",
   locations: ["2", "6"],
   players: ["2", "3"],
+  includeCoop: true,     // ✅ novo: inclui jogos coop por padrão nas estatísticas por jogo
 };
 
 let raw = null;
@@ -122,8 +123,18 @@ function safeNamePlayer(id) {
   return raw.playersById.get(id)?.name || `Player ${id}`;
 }
 
+function safeNameGame(gameId) {
+  return raw.gamesById.get(gameId)?.name || `Game ${gameId}`;
+}
+
+/* ✅ identifica coop via campo "isCoop" no array games */
+function isCoopGame(gameId) {
+  const g = raw.gamesById.get(gameId);
+  return !!(g && g.isCoop);
+}
+
 /* =========================
-   FILTROS
+   FILTROS (globais)
 ========================= */
 function buildFilterOptions() {
   // anos
@@ -166,10 +177,16 @@ function applyDefaultsToUI() {
   el("fYear").value = DEFAULTS.year ?? "";
   el("fMinTime").value = DEFAULTS.minTime ?? "";
   el("fMaxTime").value = DEFAULTS.maxTime ?? "";
+
   setRadio("locMode", DEFAULTS.locMode || "OR");
   setRadio("plMode", DEFAULTS.plMode || "OR");
+
   setMultiSelect(el("fLocation"), DEFAULTS.locations || []);
   setMultiSelect(el("fPlayers"), DEFAULTS.players || []);
+
+  // checkbox coop (se existir no HTML)
+  const coopEl = el("fIncludeCoop");
+  if (coopEl) coopEl.checked = !!DEFAULTS.includeCoop;
 }
 
 function applyFilters() {
@@ -236,7 +253,7 @@ function renderPartidas() {
   const rows = filteredPlays.map(p => ({
     data: toISOish(p.playDate),
     ano: yearOf(p.playDate),
-    jogo: raw.gamesById.get(p.gameRefId)?.name || `Game ${p.gameRefId}`,
+    jogo: safeNameGame(p.gameRefId),
     local: raw.locationsById.get(p.locationRefId)?.name || (p.locationRefId ?? ""),
     tempo: durationMin(p) ?? "",
     jogadores: (p.playerScores||[])
@@ -279,7 +296,7 @@ function renderPartidas() {
 }
 
 /* =========================
-   JOGADORES
+   JOGADORES (global)
 ========================= */
 function renderJogadores() {
   destroyTable();
@@ -334,9 +351,12 @@ function renderJogadores() {
 }
 
 /* =========================
-   AGREGADOR POR JOGO (base para 2 views)
+   AGREGADOR POR JOGO
+   (✅ aplica filtro coop aqui, só para estatísticas por jogo)
 ========================= */
 function aggregateByGame() {
+  const includeCoop = el("fIncludeCoop") ? el("fIncludeCoop").checked : true;
+
   // gameId -> { jogo, partidas, tempoMin, jogadoresUnicos:Set, perPlayer: Map(playerId -> {partidas,vitorias,tempoMin}) }
   const agg = new Map();
 
@@ -344,10 +364,12 @@ function aggregateByGame() {
     const gameId = play.gameRefId;
     if (gameId == null) continue;
 
+    if (!includeCoop && isCoopGame(gameId)) continue; // ✅ aqui
+
     if (!agg.has(gameId)) {
       agg.set(gameId, {
         gameId,
-        jogo: raw.gamesById.get(gameId)?.name || `Game ${gameId}`,
+        jogo: safeNameGame(gameId),
         partidas: 0,
         tempoMin: 0,
         jogadoresUnicos: new Set(),
@@ -390,7 +412,6 @@ function buildGameDetailsHTML(gameAgg) {
     tempo_med_min: pp.partidas ? (pp.tempoMin / pp.partidas) : 0,
   }));
 
-  // ordena por vitórias, depois winrate, depois partidas
   players.sort((a,b) => (b.vitorias - a.vitorias) || (b.winrate - a.winrate) || (b.partidas - a.partidas));
 
   const rows = players.map(p => `
@@ -427,7 +448,7 @@ function buildGameDetailsHTML(gameAgg) {
 }
 
 /* =========================
-   JOGOS (resumo + clique para detalhes)
+   JOGOS (resumo + clique p/ detalhes)
 ========================= */
 function renderJogos() {
   destroyTable();
@@ -435,7 +456,7 @@ function renderJogos() {
   const agg = aggregateByGame();
 
   const rows = [...agg.values()].map(g => {
-    // acha top vencedor
+    // top vencedor
     let best = null;
     for (const pp of g.perPlayer.values()) {
       const winrate = pp.partidas ? (pp.vitorias / pp.partidas) : 0;
@@ -443,7 +464,6 @@ function renderJogos() {
       if (!best) best = cand;
       else {
         const a = cand, b = best;
-        // vitórias > winrate > partidas
         if (
           (a.vitorias > b.vitorias) ||
           (a.vitorias === b.vitorias && a.winrate > b.winrate) ||
@@ -452,10 +472,6 @@ function renderJogos() {
       }
     }
 
-    const topName = best ? safeNamePlayer(best.playerId) : "";
-    const topWins = best ? best.vitorias : 0;
-    const topWR = best ? pct(best.winrate) : "0.0%";
-
     return {
       gameId: g.gameId,
       jogo: g.jogo,
@@ -463,10 +479,10 @@ function renderJogos() {
       tempo_total_h: (g.tempoMin / 60).toFixed(1),
       tempo_medio_min: g.partidas ? (g.tempoMin / g.partidas).toFixed(0) : "0",
       jogadores_unicos: g.jogadoresUnicos.size,
-      top_vencedor: topName,
-      top_vitorias: topWins,
-      top_winrate: topWR,
-      _details: g, // guarda agg para expandir
+      top_vencedor: best ? safeNamePlayer(best.playerId) : "",
+      top_vitorias: best ? best.vitorias : 0,
+      top_winrate: best ? pct(best.winrate) : "0.0%",
+      _details: g,
     };
   });
 
@@ -486,7 +502,7 @@ function renderJogos() {
     order: [[1, "desc"]],
   });
 
-  // Expansão de detalhes ao clicar na linha
+  // expand
   window.jQuery("#tabela tbody").off("click").on("click", "tr", function () {
     const row = table.row(this);
     if (!row) return;
@@ -498,8 +514,7 @@ function renderJogos() {
     }
 
     const data = row.data();
-    const detailsHTML = buildGameDetailsHTML(data._details);
-    row.child(detailsHTML).show();
+    row.child(buildGameDetailsHTML(data._details)).show();
     window.jQuery(this).addClass("shown");
   });
 }
@@ -579,6 +594,10 @@ function wireUI() {
     r.addEventListener("change", render)
   );
 
+  // ✅ checkbox coop (se existir no HTML)
+  const coopEl = el("fIncludeCoop");
+  if (coopEl) coopEl.addEventListener("change", render);
+
   el("btnClear").onclick = () => {
     [...el("fLocation").options].forEach(o => o.selected = false);
     el("fYear").value = "";
@@ -587,6 +606,7 @@ function wireUI() {
     [...el("fPlayers").options].forEach(o => o.selected = false);
     setRadio("locMode", "OR");
     setRadio("plMode", "OR");
+    if (coopEl) coopEl.checked = true;
     render();
   };
 }
