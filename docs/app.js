@@ -12,7 +12,7 @@ const DEFAULTS = {
   maxTime: "",          // ex: "180"
   locMode: "OR",        // "OR" ou "AND"
   plMode: "OR",         // "OR" ou "AND"
-  locations: ["2", "3"],        // ex: ["1","3"]  (ids de locationRefId)
+  locations: ["3", "4"],        // ex: ["1","3"]  (ids de locationRefId)
   players: ["2", "3"],          // ex: ["12","33"] (ids de playerRefId)
 };
 
