@@ -1,7 +1,7 @@
 let raw = null;
 let table = null;
 
-const JSON_PATH = "./data/bgstats.json";
+const JSON_PATH = new URL("data/bgstats.json", document.baseURI).toString();
 
 function destroyTable() {
   if (table) {
