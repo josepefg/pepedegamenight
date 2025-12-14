@@ -7,85 +7,60 @@
 
   <!-- DataTables -->
   <link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.min.css">
-
-  <style>
-    body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: #0b0c10;
-      color: #e6e6e6;
-      margin: 0;
-    }
-    main {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 24px;
-    }
-    h1 {
-      margin: 0 0 12px;
-      font-size: 22px;
-    }
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-    button, select, input {
-      padding: 8px 10px;
-      border-radius: 8px;
-      border: 1px solid #2a2f3a;
-      background: #141720;
-      color: #e6e6e6;
-      cursor: pointer;
-    }
-    button.active {
-      border-color: #7aa2ff;
-    }
-    input[type="number"] {
-      width: 90px;
-    }
-    #status {
-      margin-left: auto;
-      font-size: 13px;
-      opacity: 0.85;
-    }
-    table {
-      background: #11131a;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css?v=1">
 </head>
 
 <body>
-<main>
+<main class="wrap">
   <h1>BGStats – Estatísticas</h1>
 
   <div class="toolbar">
-    <button id="btnPartidas" class="active">Partidas</button>
-    <button id="btnJogadores">Jogadores</button>
+    <div class="tabs">
+      <button id="btnPartidas" class="btn active">Partidas</button>
+      <button id="btnJogadores" class="btn">Jogadores</button>
+    </div>
 
-    <select id="fLocation">
-      <option value="">Local: todos</option>
-    </select>
+    <div class="filters">
+      <div class="group">
+        <label class="lbl">Local</label>
+        <select id="fLocation" class="sel" multiple size="1" title="Selecione 1+ locais"></select>
+        <div class="tog">
+          <label><input type="radio" name="locMode" value="OR" checked> OU</label>
+          <label><input type="radio" name="locMode" value="AND"> E</label>
+        </div>
+      </div>
 
-    <select id="fYear">
-      <option value="">Ano: todos</option>
-    </select>
+      <div class="group">
+        <label class="lbl">Ano</label>
+        <select id="fYear" class="sel">
+          <option value="">Todos</option>
+        </select>
+      </div>
 
-    <label>
-      Tempo (min):
-      <input id="fMinTime" type="number" min="0" />
-      –
-      <input id="fMaxTime" type="number" min="0" />
-    </label>
+      <div class="group">
+        <label class="lbl">Tempo (min)</label>
+        <div class="row">
+          <input id="fMinTime" class="num" type="number" min="0" step="5" placeholder="min">
+          <span class="dash">–</span>
+          <input id="fMaxTime" class="num" type="number" min="0" step="5" placeholder="max">
+        </div>
+      </div>
 
-    <select id="fTogether" multiple title="Jogadores que precisam estar juntos"></select>
+      <div class="group">
+        <label class="lbl">Jogadores</label>
+        <select id="fPlayers" class="sel" multiple size="1" title="Selecione 1+ jogadores"></select>
+        <div class="tog">
+          <label><input type="radio" name="plMode" value="OR" checked> OU</label>
+          <label><input type="radio" name="plMode" value="AND"> E</label>
+        </div>
+      </div>
 
-    <button id="btnClear">Limpar filtros</button>
+      <div class="group actions">
+        <button id="btnClear" class="btn">Limpar filtros</button>
+      </div>
+    </div>
 
-    <span id="status">Carregando…</span>
+    <span id="status" class="status">Carregando…</span>
   </div>
 
   <table id="tabela" class="display" style="width:100%"></table>
@@ -95,205 +70,6 @@
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
 
-<script>
-/* =========================
-   CONFIG
-========================= */
-const JSON_PATH = "data/bgstats.json";
-
-/* =========================
-   ESTADO
-========================= */
-let raw = null;
-let filteredPlays = [];
-let table = null;
-let view = "partidas";
-
-/* =========================
-   HELPERS
-========================= */
-const $ = id => document.getElementById(id);
-
-function destroyTable() {
-  if (table) {
-    table.destroy();
-    $("#tabela").innerHTML = "";
-    table = null;
-  }
-}
-
-function indexById(arr) {
-  const m = new Map();
-  (arr || []).forEach(o => o?.id !== undefined && m.set(o.id, o));
-  return m;
-}
-
-function parseDate(dt) {
-  if (!dt) return "";
-  const d = new Date(String(dt).replace(" ", "T"));
-  return isNaN(d) ? dt : d.toISOString().slice(0,19).replace("T"," ");
-}
-
-function yearOf(dt) {
-  const d = new Date(String(dt).replace(" ", "T"));
-  return isNaN(d) ? "" : String(d.getFullYear());
-}
-
-function durationMin(p) {
-  const keys = ["durationMinutes","playTimeMinutes","playTime","length","duration","time"];
-  for (const k of keys) {
-    if (p[k] != null && p[k] !== "") {
-      const v = Number(p[k]);
-      if (!isNaN(v)) return v > 600 ? Math.round(v/60) : Math.round(v);
-    }
-  }
-  return null;
-}
-
-function parseScore(s) {
-  if (!s) return null;
-  return String(s).split("+").map(Number).filter(n=>!isNaN(n)).reduce((a,b)=>a+b,0);
-}
-
-/* =========================
-   FILTROS
-========================= */
-function applyFilters() {
-  const loc = $("fLocation").value;
-  const year = $("fYear").value;
-  const minT = $("fMinTime").value ? Number($("fMinTime").value) : null;
-  const maxT = $("fMaxTime").value ? Number($("fMaxTime").value) : null;
-  const together = [...$("fTogether").selectedOptions].map(o=>Number(o.value));
-
-  filteredPlays = raw.plays.filter(p => {
-    if (loc && String(p.locationRefId) !== loc) return false;
-    if (year && yearOf(p.playDate) !== year) return false;
-
-    const d = durationMin(p);
-    if (minT != null && (d == null || d < minT)) return false;
-    if (maxT != null && (d == null || d > maxT)) return false;
-
-    if (together.length) {
-      const ids = new Set((p.playerScores||[]).map(ps=>ps.playerRefId));
-      for (const t of together) if (!ids.has(t)) return false;
-    }
-    return true;
-  });
-
-  $("status").textContent = `Filtrado: ${filteredPlays.length} / ${raw.plays.length}`;
-}
-
-/* =========================
-   RENDER
-========================= */
-function render() {
-  applyFilters();
-  destroyTable();
-  view === "jogadores" ? renderJogadores() : renderPartidas();
-}
-
-function renderPartidas() {
-  const rows = filteredPlays.map(p => ({
-    data: parseDate(p.playDate),
-    ano: yearOf(p.playDate),
-    jogo: raw.gamesById.get(p.gameRefId)?.name || p.gameRefId,
-    local: raw.locationsById.get(p.locationRefId)?.name || p.locationRefId,
-    tempo: durationMin(p) ?? "",
-    jogadores: (p.playerScores||[]).map(ps=>raw.playersById.get(ps.playerRefId)?.name||ps.playerRefId).join(", "),
-    vencedores: (p.playerScores||[]).filter(ps=>ps.winner).map(ps=>raw.playersById.get(ps.playerRefId)?.name||ps.playerRefId).join(", ")
-  }));
-
-  table = new DataTable("#tabela", {
-    data: rows,
-    columns: [
-      {title:"Data", data:"data"},
-      {title:"Ano", data:"ano"},
-      {title:"Jogo", data:"jogo"},
-      {title:"Local", data:"local"},
-      {title:"Tempo (min)", data:"tempo"},
-      {title:"Jogadores", data:"jogadores"},
-      {title:"Vencedores", data:"vencedores"}
-    ],
-    order:[[0,"desc"]],
-    pageLength:25
-  });
-}
-
-function renderJogadores() {
-  const agg = new Map();
-
-  for (const p of filteredPlays) {
-    for (const ps of (p.playerScores||[])) {
-      const id = ps.playerRefId;
-      if (!agg.has(id)) agg.set(id,{jogador: raw.playersById.get(id)?.name||id, partidas:0, vitorias:0});
-      const a = agg.get(id);
-      a.partidas++;
-      if (ps.winner) a.vitorias++;
-    }
-  }
-
-  const rows = [...agg.values()].map(a => ({
-    ...a,
-    winrate: ((100*a.vitorias/a.partidas)||0).toFixed(1)+"%"
-  }));
-
-  table = new DataTable("#tabela", {
-    data: rows,
-    columns: [
-      {title:"Jogador", data:"jogador"},
-      {title:"Partidas", data:"partidas"},
-      {title:"Vitórias", data:"vitorias"},
-      {title:"Winrate", data:"winrate"}
-    ],
-    order:[[1,"desc"]],
-    pageLength:25
-  });
-}
-
-/* =========================
-   INIT
-========================= */
-async function init() {
-  try {
-    const r = await fetch(JSON_PATH, {cache:"no-store"});
-    if (!r.ok) throw new Error("HTTP "+r.status);
-    const j = await r.json();
-
-    raw = {
-      plays: j.plays || [],
-      playersById: indexById(j.players || []),
-      gamesById: indexById(j.games || []),
-      locationsById: indexById(j.locations || [])
-    };
-
-    // filtros
-    [...new Set(raw.plays.map(p=>yearOf(p.playDate)).filter(Boolean))].sort()
-      .forEach(y => $("fYear").append(new Option(y,y)));
-
-    raw.locationsById.forEach((v,k)=>$("fLocation").append(new Option(v.name||k,k)));
-    raw.playersById.forEach((v,k)=>$("fTogether").append(new Option(v.name||k,k)));
-
-    $("btnPartidas").onclick = () => { view="partidas"; $("btnPartidas").classList.add("active"); $("btnJogadores").classList.remove("active"); render(); };
-    $("btnJogadores").onclick = () => { view="jogadores"; $("btnJogadores").classList.add("active"); $("btnPartidas").classList.remove("active"); render(); };
-
-    ["fLocation","fYear","fMinTime","fMaxTime","fTogether"].forEach(id=>$(id).onchange=render);
-    $("btnClear").onclick = () => {
-      ["fLocation","fYear","fMinTime","fMaxTime"].forEach(id=>$(id).value="");
-      [...$("fTogether").options].forEach(o=>o.selected=false);
-      render();
-    };
-
-    $("status").textContent = `OK — ${raw.plays.length} partidas`;
-    filteredPlays = raw.plays.slice();
-    render();
-
-  } catch (e) {
-    $("status").textContent = "Erro ao carregar JSON: " + e.message;
-    console.error(e);
-  }
-}
-
-init();
-</script>
+<script src="app.js?v=1"></script>
 </body>
 </html>

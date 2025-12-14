@@ -1,14 +1,11 @@
-document.getElementById("status").textContent = "JS carregou ✅";
+const JSON_PATH = "data/bgstats.json";
 
 let raw = null;
-let table = null;
 let filteredPlays = [];
+let table = null;
+let view = "partidas";
 
-const JSON_PATH = "data/bgstats.json"; // dentro de docs/data/
-
-function $(id) {
-  return document.getElementById(id);
-}
+const el = (id) => document.getElementById(id);
 
 function destroyTable() {
   if (table) {
@@ -21,22 +18,15 @@ function destroyTable() {
 function indexById(arr) {
   const m = new Map();
   (arr || []).forEach(o => {
-    if (o && (o.id !== undefined)) m.set(o.id, o);
+    if (o && o.id !== undefined) m.set(o.id, o);
   });
   return m;
 }
 
-function getPlayerName(playerId) {
-  const p = raw.playersById.get(playerId);
-  return p?.name || `Player ${playerId}`;
-}
-function getGameName(gameId) {
-  const g = raw.gamesById.get(gameId);
-  return g?.name || `Game ${gameId}`;
-}
-function getLocationName(locId) {
-  const l = raw.locationsById.get(locId);
-  return l?.name || (locId ?? "");
+function yearOf(dt) {
+  if (!dt) return "";
+  const d = new Date(String(dt).replace(" ", "T"));
+  return Number.isNaN(d.getTime()) ? "" : String(d.getFullYear());
 }
 
 function toISOish(dt) {
@@ -45,24 +35,19 @@ function toISOish(dt) {
   if (Number.isNaN(d.getTime())) return String(dt);
   return d.toISOString().slice(0, 19).replace("T", " ");
 }
-function getYear(dt) {
-  const d = new Date(String(dt).replace(" ", "T"));
-  return Number.isNaN(d.getTime()) ? "" : String(d.getFullYear());
-}
 
-// tenta achar duração (min)
-function getDurationMinutes(play) {
-  const candidates = [
+// Heurística: tenta achar duração em minutos
+function durationMin(play) {
+  const keys = [
     "durationMinutes", "playTimeMinutes", "playTime", "length", "duration", "time",
     "playTimeSeconds", "durationSeconds", "lengthSeconds"
   ];
-
-  for (const k of candidates) {
+  for (const k of keys) {
     if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
       const v = Number(play[k]);
       if (!Number.isNaN(v)) {
         if (k.toLowerCase().includes("second")) return Math.round(v / 60);
-        if (v > 600) return Math.round(v / 60); // heurística p/ segundos
+        if (v > 600) return Math.round(v / 60); // parece segundos
         return Math.round(v);
       }
     }
@@ -70,135 +55,139 @@ function getDurationMinutes(play) {
   return null;
 }
 
-function parseScore(scoreStr) {
-  if (scoreStr === null || scoreStr === undefined) return null;
-  const s = String(scoreStr).trim();
-  if (!s) return null;
-  const parts = s.split("+").map(x => Number(x.trim())).filter(n => !Number.isNaN(n));
-  if (!parts.length) return null;
-  return parts.reduce((a, b) => a + b, 0);
+function getMode(radioName) {
+  const x = document.querySelector(`input[name="${radioName}"]:checked`);
+  return x ? x.value : "OR";
 }
 
-function buildOptions() {
-  const locSel = $("fLocation");
-  const yearsSel = $("fYear");
-  const togetherSel = $("fPlayersTogether");
-
-  // limpa (mantém primeiro option nos dois primeiros)
-  locSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
-  yearsSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
-  togetherSel.innerHTML = "";
-
-  const locSet = new Set();
-  const yearSet = new Set();
-
-  for (const p of raw.plays) {
-    if (p.locationRefId !== undefined && p.locationRefId !== null && p.locationRefId !== "") {
-      locSet.add(String(p.locationRefId));
-    }
-    const y = getYear(p.playDate);
-    if (y) yearSet.add(y);
-  }
-
-  [...locSet].sort((a,b)=>a.localeCompare(b)).forEach(id => {
-    const opt = document.createElement("option");
-    opt.value = id;
-    const numericId = Number(id);
-    opt.textContent = getLocationName(Number.isNaN(numericId) ? id : numericId) || `Local ${id}`;
-    locSel.appendChild(opt);
-  });
-
-  [...yearSet].sort().forEach(y => {
-    const opt = document.createElement("option");
-    opt.value = y;
-    opt.textContent = y;
-    yearsSel.appendChild(opt);
-  });
-
-  const players = (raw.players || []).slice().sort((a,b) => (a.name||"").localeCompare(b.name||""));
-  for (const pl of players) {
-    const opt = document.createElement("option");
-    opt.value = String(pl.id);
-    opt.textContent = pl.name || `Player ${pl.id}`;
-    togetherSel.appendChild(opt);
-  }
+function getSelectedValues(selectEl) {
+  return [...selectEl.selectedOptions].map(o => o.value);
 }
 
-function readFilters() {
-  const locationId = $("fLocation").value;
-  const year = $("fYear").value;
-  const minTimeStr = $("fMinTime").value;
-  const maxTimeStr = $("fMaxTime").value;
-
-  const togetherSel = $("fPlayersTogether");
-  const togetherIds = [...togetherSel.selectedOptions]
+function getSelectedNumbers(selectEl) {
+  return [...selectEl.selectedOptions]
     .map(o => Number(o.value))
-    .filter(v => !Number.isNaN(v));
+    .filter(n => !Number.isNaN(n));
+}
 
-  return {
-    locationId: locationId || null,
-    year: year || null,
-    minTime: minTimeStr !== "" ? Number(minTimeStr) : null,
-    maxTime: maxTimeStr !== "" ? Number(maxTimeStr) : null,
-    togetherIds,
-  };
+function buildFilterOptions() {
+  // Anos
+  const years = [...new Set((raw.plays || []).map(p => yearOf(p.playDate)).filter(Boolean))].sort();
+  const yearSel = el("fYear");
+  yearSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
+  years.forEach(y => yearSel.append(new Option(y, y)));
+
+  // Locais (multi)
+  const locSel = el("fLocation");
+  locSel.innerHTML = "";
+  // incluir apenas locais que aparecem em plays (pra não lotar)
+  const usedLocIds = new Set((raw.plays || [])
+    .map(p => p.locationRefId)
+    .filter(v => v !== undefined && v !== null && v !== "")
+    .map(v => String(v)));
+
+  const locs = [];
+  raw.locationsById.forEach((v, k) => {
+    if (usedLocIds.has(String(k))) locs.push([k, v?.name || `Local ${k}`]);
+  });
+  // se não tiver locations no export, ainda assim lista os ids encontrados
+  if (!locs.length && usedLocIds.size) {
+    [...usedLocIds].sort().forEach(id => locs.push([id, `Local ${id}`]));
+  } else {
+    locs.sort((a,b) => String(a[1]).localeCompare(String(b[1])));
+  }
+  locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
+
+  // Jogadores (multi)
+  const plSel = el("fPlayers");
+  plSel.innerHTML = "";
+  const players = (raw.players || []).slice()
+    .sort((a,b) => (a.name||"").localeCompare(b.name||""));
+  players.forEach(p => plSel.append(new Option(p.name || `Player ${p.id}`, String(p.id))));
 }
 
 function applyFilters() {
-  const f = readFilters();
+  const locSelected = getSelectedValues(el("fLocation"));  // strings
+  const locMode = getMode("locMode"); // OR / AND
 
-  filteredPlays = raw.plays.filter(play => {
-    if (f.locationId) {
-      if (String(play.locationRefId ?? "") !== String(f.locationId)) return false;
-    }
-    if (f.year) {
-      if (getYear(play.playDate) !== f.year) return false;
-    }
+  const year = el("fYear").value || null;
 
-    const dur = getDurationMinutes(play);
-    if (f.minTime !== null) {
-      if (dur === null || dur < f.minTime) return false;
-    }
-    if (f.maxTime !== null) {
-      if (dur === null || dur > f.maxTime) return false;
-    }
+  const minT = el("fMinTime").value !== "" ? Number(el("fMinTime").value) : null;
+  const maxT = el("fMaxTime").value !== "" ? Number(el("fMaxTime").value) : null;
 
-    if (f.togetherIds.length) {
-      const ids = new Set((play.playerScores || []).map(ps => ps.playerRefId));
-      for (const needed of f.togetherIds) {
-        if (!ids.has(needed)) return false;
+  const plSelected = getSelectedNumbers(el("fPlayers"));  // numbers
+  const plMode = getMode("plMode"); // OR / AND
+
+  filteredPlays = (raw.plays || []).filter(play => {
+    // Ano
+    if (year && yearOf(play.playDate) !== year) return false;
+
+    // Tempo
+    const dur = durationMin(play);
+    if (minT !== null && (dur === null || dur < minT)) return false;
+    if (maxT !== null && (dur === null || dur > maxT)) return false;
+
+    // Local (OR/AND)
+    if (locSelected.length) {
+      // play tem só 1 local. Então:
+      // OR = basta estar em qualquer selecionado (equivalente a IN)
+      // AND = impossível com 2+ locais (uma partida não tem 2 locais)
+      // -> regra BGStats-like: AND significa “tem que estar em TODOS selecionados”
+      // e como é 1 valor, só passa se locSelected tiver 1 item e for igual.
+      const locId = String(play.locationRefId ?? "");
+      if (locMode === "OR") {
+        if (!locSelected.includes(locId)) return false;
+      } else { // AND
+        if (locSelected.length !== 1) return false;
+        if (locSelected[0] !== locId) return false;
       }
     }
+
+    // Jogadores (OR/AND)
+    if (plSelected.length) {
+      const ids = new Set((play.playerScores || []).map(ps => ps.playerRefId));
+      if (plMode === "OR") {
+        let hasAny = false;
+        for (const pid of plSelected) {
+          if (ids.has(pid)) { hasAny = true; break; }
+        }
+        if (!hasAny) return false;
+      } else { // AND
+        for (const pid of plSelected) {
+          if (!ids.has(pid)) return false;
+        }
+      }
+    }
+
     return true;
   });
 
-  $("status").textContent = `Filtrado: ${filteredPlays.length} / ${raw.plays.length} partidas`;
+  el("status").textContent = `Filtrado: ${filteredPlays.length} / ${raw.plays.length} partidas`;
 }
 
 function renderPartidas() {
   destroyTable();
 
-  const rows = filteredPlays.map(play => {
-    const duration = getDurationMinutes(play);
-    const players = (play.playerScores || []).map(ps => getPlayerName(ps.playerRefId)).join(", ");
-    const winners = (play.playerScores || []).filter(ps => ps.winner).map(ps => getPlayerName(ps.playerRefId)).join(", ");
+  const rows = filteredPlays.map(p => {
+    const players = (p.playerScores || [])
+      .map(ps => raw.playersById.get(ps.playerRefId)?.name || `Player ${ps.playerRefId}`)
+      .join(", ");
 
-    const scoreTotal = (play.playerScores || [])
-      .map(ps => parseScore(ps.score))
-      .filter(v => v !== null)
-      .reduce((a,b) => a + b, 0);
+    const winners = (p.playerScores || [])
+      .filter(ps => ps.winner)
+      .map(ps => raw.playersById.get(ps.playerRefId)?.name || `Player ${ps.playerRefId}`)
+      .join(", ");
 
     return {
-      data: toISOish(play.playDate),
-      ano: getYear(play.playDate),
-      jogo: getGameName(play.gameRefId),
-      local: getLocationName(play.locationRefId),
-      tempo_min: duration ?? "",
+      data: toISOish(p.playDate),
+      ano: yearOf(p.playDate),
+      jogo: raw.gamesById.get(p.gameRefId)?.name || `Game ${p.gameRefId}`,
+      local: raw.locationsById.get(p.locationRefId)?.name || (p.locationRefId ?? ""),
+      tempo: durationMin(p) ?? "",
       jogadores: players,
       vencedores: winners,
-      times: play.usesTeams ? "sim" : "não",
-      rating: play.rating ?? "",
-      score_total: scoreTotal || "",
+      times: p.usesTeams ? "sim" : "não",
+      rating: p.rating ?? ""
     };
   });
 
@@ -214,7 +203,6 @@ function renderPartidas() {
         <th>Vencedores</th>
         <th>Times?</th>
         <th>Rating</th>
-        <th>Score (soma)</th>
       </tr>
     </thead>
   `);
@@ -226,12 +214,11 @@ function renderPartidas() {
       { data: "ano" },
       { data: "jogo" },
       { data: "local" },
-      { data: "tempo_min" },
+      { data: "tempo" },
       { data: "jogadores" },
       { data: "vencedores" },
       { data: "times" },
       { data: "rating" },
-      { data: "score_total" },
     ],
     pageLength: 25,
     order: [[0, "desc"]],
@@ -246,101 +233,85 @@ function renderJogadores() {
   for (const play of filteredPlays) {
     for (const ps of (play.playerScores || [])) {
       const id = ps.playerRefId;
-
       if (!agg.has(id)) {
-        agg.set(id, {
-          jogador: getPlayerName(id),
-          partidas: 0,
-          vitorias: 0,
-          rankSum: 0,
-          rankCount: 0,
-          scoreSum: 0,
-          scoreCount: 0
-        });
+        agg.set(id, { jogador: raw.playersById.get(id)?.name || `Player ${id}`, partidas: 0, vitorias: 0 });
       }
-
       const s = agg.get(id);
       s.partidas += 1;
       if (ps.winner) s.vitorias += 1;
-
-      if (ps.rank !== undefined && ps.rank !== null) {
-        s.rankSum += Number(ps.rank);
-        s.rankCount += 1;
-      }
-
-      const sc = parseScore(ps.score);
-      if (sc !== null) {
-        s.scoreSum += sc;
-        s.scoreCount += 1;
-      }
     }
   }
 
   const rows = [...agg.values()].map(s => ({
-    jogador: s.jogador,
-    partidas: s.partidas,
-    vitorias: s.vitorias,
-    winrate: s.partidas ? (100 * s.vitorias / s.partidas).toFixed(1) + "%" : "0%",
-    rank_medio: s.rankCount ? (s.rankSum / s.rankCount).toFixed(2) : "",
-    score_medio: s.scoreCount ? (s.scoreSum / s.scoreCount).toFixed(2) : ""
+    ...s,
+    winrate: s.partidas ? (100 * s.vitorias / s.partidas).toFixed(1) + "%" : "0%"
   }));
-
-  window.jQuery("#tabela").append(`
-    <thead>
-      <tr>
-        <th>Jogador</th>
-        <th>Partidas</th>
-        <th>Vitórias</th>
-        <th>Winrate</th>
-        <th>Rank médio</th>
-        <th>Score médio</th>
-      </tr>
-    </thead>
-  `);
 
   table = new DataTable("#tabela", {
     data: rows,
     columns: [
-      { data: "jogador" },
-      { data: "partidas" },
-      { data: "vitorias" },
-      { data: "winrate" },
-      { data: "rank_medio" },
-      { data: "score_medio" },
+      { title: "Jogador", data: "jogador" },
+      { title: "Partidas", data: "partidas" },
+      { title: "Vitórias", data: "vitorias" },
+      { title: "Winrate", data: "winrate" },
     ],
     pageLength: 25,
     order: [[1, "desc"]],
   });
 }
 
-function refreshActiveView() {
+function render() {
   applyFilters();
-  if ($("btnJogadores").classList.contains("active")) renderJogadores();
+  if (view === "jogadores") renderJogadores();
   else renderPartidas();
 }
 
-function wireFilters() {
-  const ids = ["fLocation", "fYear", "fMinTime", "fMaxTime", "fPlayersTogether"];
-  ids.forEach(id => $(id).addEventListener("change", refreshActiveView));
-  $("fMinTime").addEventListener("input", refreshActiveView);
-  $("fMaxTime").addEventListener("input", refreshActiveView);
+function wireUI() {
+  const btnPartidas = el("btnPartidas");
+  const btnJogadores = el("btnJogadores");
 
-  $("btnClear").onclick = () => {
-    $("fLocation").value = "";
-    $("fYear").value = "";
-    $("fMinTime").value = "";
-    $("fMaxTime").value = "";
-    const sel = $("fPlayersTogether");
-    [...sel.options].forEach(o => o.selected = false);
-    refreshActiveView();
+  btnPartidas.onclick = () => {
+    view = "partidas";
+    btnPartidas.classList.add("active");
+    btnJogadores.classList.remove("active");
+    render();
+  };
+
+  btnJogadores.onclick = () => {
+    view = "jogadores";
+    btnJogadores.classList.add("active");
+    btnPartidas.classList.remove("active");
+    render();
+  };
+
+  // filtros
+  ["fLocation", "fYear", "fMinTime", "fMaxTime", "fPlayers"].forEach(id => {
+    el(id).addEventListener("change", render);
+  });
+  el("fMinTime").addEventListener("input", render);
+  el("fMaxTime").addEventListener("input", render);
+
+  // toggles OR/AND
+  document.querySelectorAll('input[name="locMode"]').forEach(r => r.addEventListener("change", render));
+  document.querySelectorAll('input[name="plMode"]').forEach(r => r.addEventListener("change", render));
+
+  el("btnClear").onclick = () => {
+    // clear selects
+    [...el("fLocation").options].forEach(o => o.selected = false);
+    el("fYear").value = "";
+    el("fMinTime").value = "";
+    el("fMaxTime").value = "";
+    [...el("fPlayers").options].forEach(o => o.selected = false);
+
+    // reset modes to OR
+    document.querySelector('input[name="locMode"][value="OR"]').checked = true;
+    document.querySelector('input[name="plMode"][value="OR"]').checked = true;
+
+    render();
   };
 }
 
-async function main() {
-  const statusEl = $("status");
-  const btnPartidas = $("btnPartidas");
-  const btnJogadores = $("btnJogadores");
-
+async function init() {
   try {
     const res = await fetch(JSON_PATH, { cache: "no-store" });
     if (!res.ok) throw new Error(`Não consegui ler ${JSON_PATH} (HTTP ${res.status})`);
@@ -348,37 +319,24 @@ async function main() {
     const j = await res.json();
 
     raw = {
-      games: j.games || [],
-      players: j.players || [],
-      locations: j.locations || [],
       plays: j.plays || [],
-      gamesById: indexById(j.games || []),
+      players: j.players || [],
+      games: j.games || [],
+      locations: j.locations || [],
       playersById: indexById(j.players || []),
+      gamesById: indexById(j.games || []),
       locationsById: indexById(j.locations || []),
     };
 
-    buildOptions();
-    wireFilters();
-
-    filteredPlays = raw.plays.slice();
-    statusEl.textContent = `OK — ${raw.plays.length} partidas`;
-    renderPartidas();
-
-    btnPartidas.onclick = () => {
-      btnPartidas.classList.add("active");
-      btnJogadores.classList.remove("active");
-      refreshActiveView();
-    };
-    btnJogadores.onclick = () => {
-      btnJogadores.classList.add("active");
-      btnPartidas.classList.remove("active");
-      refreshActiveView();
-    };
+    el("status").textContent = `OK — ${raw.plays.length} partidas`;
+    buildFilterOptions();
+    wireUI();
+    render();
 
   } catch (e) {
     console.error(e);
-    statusEl.textContent = `Erro: ${e.message} (veja Console/F12)`;
+    el("status").textContent = `Erro: ${e.message}`;
   }
 }
 
-main();
+init();
