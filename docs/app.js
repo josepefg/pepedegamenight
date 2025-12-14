@@ -12,7 +12,7 @@ const DEFAULTS = {
   plMode: "OR",
   locations: ["2", "6"],
   players: ["2", "3"],
-  includeCoop: true,     // ✅ inclui coop por padrão nas estatísticas por jogo
+  includeCoop: true,     // ✅ inclui coop por padrão
 };
 
 let raw = null;
@@ -34,7 +34,6 @@ function destroyTable() {
   }
 }
 
-/* ✅ indexa SEMPRE por string (evita mismatch number vs string) */
 function indexByIdString(arr) {
   const m = new Map();
   (arr || []).forEach(o => {
@@ -58,9 +57,6 @@ function toISOish(dt) {
   return d.toISOString().slice(0, 19).replace("T", " ");
 }
 
-/* =========================
-   DURAÇÃO (BGStats: durationMin)
-========================= */
 function durationMin(play) {
   if (play && play.durationMin !== undefined && play.durationMin !== null && play.durationMin !== "") {
     const v = Number(play.durationMin);
@@ -136,7 +132,6 @@ function safeNameGame(gameId) {
 /* ✅ coop = campo "cooperative" no JSON */
 function isCoopGame(gameId) {
   const g = raw.gamesById.get(sid(gameId));
-  // aceita true boolean OU string "true"/"1"
   const v = g ? g.cooperative : false;
   if (v === true) return true;
   if (typeof v === "string") return ["true", "1", "yes", "sim"].includes(v.toLowerCase());
@@ -144,17 +139,21 @@ function isCoopGame(gameId) {
   return false;
 }
 
+/* ✅ retorna se devemos incluir cooperativos nas estatísticas */
+function includeCoopEnabled() {
+  const coopEl = el("fIncludeCoop");
+  return coopEl ? !!coopEl.checked : true;
+}
+
 /* =========================
-   FILTROS
+   FILTROS (globais)
 ========================= */
 function buildFilterOptions() {
-  // anos
   const years = [...new Set(raw.plays.map(p => yearOf(p.playDate)).filter(Boolean))].sort();
   const yearSel = el("fYear");
   yearSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
   years.forEach(y => yearSel.append(new Option(y, y)));
 
-  // locais
   const locSel = el("fLocation");
   locSel.innerHTML = "";
 
@@ -170,7 +169,6 @@ function buildFilterOptions() {
   locs.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
   locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
 
-  // jogadores
   const plSel = el("fPlayers");
   plSel.innerHTML = "";
   raw.players
@@ -247,7 +245,7 @@ function applyFilters() {
 }
 
 /* =========================
-   PARTIDAS
+   PARTIDAS (mantém tudo, não filtra coop aqui)
 ========================= */
 function renderPartidas() {
   destroyTable();
@@ -293,16 +291,20 @@ function renderPartidas() {
 }
 
 /* =========================
-   JOGADORES
+   JOGADORES (✅ agora respeita o filtro coop)
 ========================= */
 function renderJogadores() {
   destroyTable();
 
+  const includeCoop = includeCoopEnabled();
+
   const agg = new Map(); // playerId(string) -> stats
 
   for (const play of filteredPlays) {
-    const dur = durationMin(play);
     const gameId = sid(play.gameRefId);
+    if (!includeCoop && isCoopGame(gameId)) continue; // ✅ aplica aqui
+
+    const dur = durationMin(play);
 
     for (const ps of (play.playerScores || [])) {
       const pid = sid(ps.playerRefId);
@@ -345,11 +347,10 @@ function renderJogadores() {
 }
 
 /* =========================
-   AGREGADOR POR JOGO (✅ filtro coop aqui)
+   AGREGADOR POR JOGO (já respeita o filtro coop)
 ========================= */
 function aggregateByGame() {
-  const coopEl = el("fIncludeCoop");
-  const includeCoop = coopEl ? coopEl.checked : true;
+  const includeCoop = includeCoopEnabled();
 
   const agg = new Map(); // gameId(string) -> stats
 
@@ -392,6 +393,10 @@ function aggregateByGame() {
   }
 
   return agg;
+}
+
+function pct(v) {
+  return (Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "0.0%");
 }
 
 function buildGameDetailsHTML(gameAgg) {
@@ -439,9 +444,6 @@ function buildGameDetailsHTML(gameAgg) {
   `;
 }
 
-/* =========================
-   JOGOS
-========================= */
 function renderJogos() {
   destroyTable();
 
@@ -508,9 +510,6 @@ function renderJogos() {
   });
 }
 
-/* =========================
-   JOGO x JOGADOR
-========================= */
 function renderJogoJogador() {
   destroyTable();
 
