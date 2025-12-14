@@ -80,6 +80,7 @@ function buildFilterOptions() {
   // Locais (multi)
   const locSel = el("fLocation");
   locSel.innerHTML = "";
+
   // incluir apenas locais que aparecem em plays (pra não lotar)
   const usedLocIds = new Set((raw.plays || [])
     .map(p => p.locationRefId)
@@ -90,12 +91,13 @@ function buildFilterOptions() {
   raw.locationsById.forEach((v, k) => {
     if (usedLocIds.has(String(k))) locs.push([k, v?.name || `Local ${k}`]);
   });
-  // se não tiver locations no export, ainda assim lista os ids encontrados
+
   if (!locs.length && usedLocIds.size) {
     [...usedLocIds].sort().forEach(id => locs.push([id, `Local ${id}`]));
   } else {
     locs.sort((a,b) => String(a[1]).localeCompare(String(b[1])));
   }
+
   locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
 
   // Jogadores (multi)
@@ -129,15 +131,11 @@ function applyFilters() {
 
     // Local (OR/AND)
     if (locSelected.length) {
-      // play tem só 1 local. Então:
-      // OR = basta estar em qualquer selecionado (equivalente a IN)
-      // AND = impossível com 2+ locais (uma partida não tem 2 locais)
-      // -> regra BGStats-like: AND significa “tem que estar em TODOS selecionados”
-      // e como é 1 valor, só passa se locSelected tiver 1 item e for igual.
       const locId = String(play.locationRefId ?? "");
       if (locMode === "OR") {
         if (!locSelected.includes(locId)) return false;
       } else { // AND
+        // uma partida só pode ter 1 local; AND com 2+ vira impossível
         if (locSelected.length !== 1) return false;
         if (locSelected[0] !== locId) return false;
       }
@@ -228,24 +226,46 @@ function renderPartidas() {
 function renderJogadores() {
   destroyTable();
 
+  // Agregações por jogador (apenas nas plays filtradas)
   const agg = new Map();
 
   for (const play of filteredPlays) {
+    const dur = durationMin(play);
+    const gameId = play.gameRefId;
+
     for (const ps of (play.playerScores || [])) {
       const id = ps.playerRefId;
+
       if (!agg.has(id)) {
-        agg.set(id, { jogador: raw.playersById.get(id)?.name || `Player ${id}`, partidas: 0, vitorias: 0 });
+        agg.set(id, {
+          jogador: raw.playersById.get(id)?.name || `Player ${id}`,
+          partidas: 0,
+          vitorias: 0,
+          gamesSet: new Set(),
+          tempoTotalMin: 0,
+        });
       }
+
       const s = agg.get(id);
       s.partidas += 1;
       if (ps.winner) s.vitorias += 1;
+
+      if (gameId !== undefined && gameId !== null && gameId !== "") s.gamesSet.add(String(gameId));
+      if (dur !== null) s.tempoTotalMin += dur;
     }
   }
 
-  const rows = [...agg.values()].map(s => ({
-    ...s,
-    winrate: s.partidas ? (100 * s.vitorias / s.partidas).toFixed(1) + "%" : "0%"
-  }));
+  const rows = [...agg.values()].map(s => {
+    const horas = s.tempoTotalMin / 60;
+    return {
+      jogador: s.jogador,
+      partidas: s.partidas,
+      vitorias: s.vitorias,
+      winrate: s.partidas ? (100 * s.vitorias / s.partidas).toFixed(1) + "%" : "0%",
+      jogos_diferentes: s.gamesSet.size,
+      tempo_total_h: horas ? horas.toFixed(1) : "0.0",
+    };
+  });
 
   table = new DataTable("#tabela", {
     data: rows,
@@ -254,6 +274,8 @@ function renderJogadores() {
       { title: "Partidas", data: "partidas" },
       { title: "Vitórias", data: "vitorias" },
       { title: "Winrate", data: "winrate" },
+      { title: "Jogos diferentes", data: "jogos_diferentes" },
+      { title: "Tempo total (h)", data: "tempo_total_h" },
     ],
     pageLength: 25,
     order: [[1, "desc"]],
