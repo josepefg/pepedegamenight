@@ -1,88 +1,31 @@
 const JSON_PATH = "data/bgstats.json";
 
+/* =========================
+   DEFAULTS FIXOS (SEM PERSISTIR)
+   - IDs de locais/jogadores são os VALUES dos <option> (strings)
+   - Se deixar arrays vazios, começa "sem filtro" (todos)
+========================= */
 const DEFAULTS = {
-  year: "2025",                 // ex: "2025" ou "" para todos
-  minTime: "",              // ex: "30"
-  maxTime: "",              // ex: "180"
-  locMode: "OR",            // "OR" ou "AND"
-  plMode: "OR",             // "OR" ou "AND"
-  locations: ["2", "3"],            // ex: ["1","3"] (ids do local)
-  players: ["2", "3"],              // ex: ["12","33"] (ids dos jogadores, como string)
-  view: "partidas",         // "partidas" | "jogadores" | "jogos"
-  rememberLast: true        // se true, usa localStorage por padrão
+  view: "partidas",     // "partidas" | "jogadores" | "jogos"
+  year: "2025",             // ex: "2025" ou "" para todos
+  minTime: "",          // ex: "30"
+  maxTime: "",          // ex: "180"
+  locMode: "OR",        // "OR" ou "AND"
+  plMode: "OR",         // "OR" ou "AND"
+  locations: ["2", "3"],        // ex: ["1","3"]  (ids de locationRefId)
+  players: ["2", "3"],          // ex: ["12","33"] (ids de playerRefId)
 };
 
 let raw = null;
 let filteredPlays = [];
 let table = null;
-let view = "partidas";
+let view = DEFAULTS.view;
 
 const el = (id) => document.getElementById(id);
 
 /* =========================
    HELPERS
 ========================= */
-const STORAGE_KEY = "bgstats_filters_v1";
-
-function setRadio(name, value) {
-  const elRadio = document.querySelector(`input[name="${name}"][value="${value}"]`);
-  if (elRadio) elRadio.checked = true;
-}
-
-function setMultiSelect(selectEl, values) {
-  const set = new Set((values || []).map(String));
-  [...selectEl.options].forEach(o => { o.selected = set.has(String(o.value)); });
-}
-
-function readFiltersFromUI() {
-  return {
-    year: el("fYear").value || "",
-    minTime: el("fMinTime").value || "",
-    maxTime: el("fMaxTime").value || "",
-    locMode: getMode("locMode"),
-    plMode: getMode("plMode"),
-    locations: [...el("fLocation").selectedOptions].map(o => String(o.value)),
-    players: [...el("fPlayers").selectedOptions].map(o => String(o.value)),
-    view
-  };
-}
-
-function applyFiltersToUI(state) {
-  el("fYear").value = state.year ?? "";
-  el("fMinTime").value = state.minTime ?? "";
-  el("fMaxTime").value = state.maxTime ?? "";
-  setRadio("locMode", state.locMode || "OR");
-  setRadio("plMode", state.plMode || "OR");
-  setMultiSelect(el("fLocation"), state.locations || []);
-  setMultiSelect(el("fPlayers"), state.players || []);
-}
-
-function saveFilters() {
-  if (!DEFAULTS.rememberLast) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(readFiltersFromUI()));
-}
-
-function loadSavedFilters() {
-  if (!DEFAULTS.rememberLast) return null;
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-  } catch {
-    return null;
-  }
-}
-
-function setActiveTab() {
-  // marca botão ativo
-  const btnPartidas = el("btnPartidas");
-  const btnJogadores = el("btnJogadores");
-  const btnJogos = el("btnJogos");
-
-  btnPartidas.classList.toggle("active", view === "partidas");
-  btnJogadores.classList.toggle("active", view === "jogadores");
-  btnJogos.classList.toggle("active", view === "jogos");
-}
-
-
 function destroyTable() {
   if (table) {
     table.destroy();
@@ -113,7 +56,7 @@ function toISOish(dt) {
 }
 
 /* =========================
-   DURAÇÃO (usa durationMin do BGStats)
+   DURAÇÃO (BGStats: durationMin)
 ========================= */
 function durationMin(play) {
   if (play && play.durationMin !== undefined && play.durationMin !== null && play.durationMin !== "") {
@@ -145,14 +88,25 @@ function getMode(radioName) {
   return x ? x.value : "OR";
 }
 
-function getSelectedValues(sel) {
-  return [...sel.selectedOptions].map(o => o.value);
+function setRadio(name, value) {
+  const r = document.querySelector(`input[name="${name}"][value="${value}"]`);
+  if (r) r.checked = true;
 }
 
-function getSelectedNumbers(sel) {
-  return [...sel.selectedOptions]
-    .map(o => Number(o.value))
-    .filter(n => !Number.isNaN(n));
+function setMultiSelect(selectEl, values) {
+  const set = new Set((values || []).map(String));
+  [...selectEl.options].forEach(o => { o.selected = set.has(String(o.value)); });
+}
+
+function setActiveTab() {
+  const btnPartidas = el("btnPartidas");
+  const btnJogadores = el("btnJogadores");
+  const btnJogos = el("btnJogos");
+  if (!btnJogos) return; // caso ainda não tenha colocado no HTML
+
+  btnPartidas.classList.toggle("active", view === "partidas");
+  btnJogadores.classList.toggle("active", view === "jogadores");
+  btnJogos.classList.toggle("active", view === "jogos");
 }
 
 /* =========================
@@ -168,6 +122,7 @@ function buildFilterOptions() {
   // locais
   const locSel = el("fLocation");
   locSel.innerHTML = "";
+
   const usedLocIds = new Set(
     raw.plays.map(p => p.locationRefId)
       .filter(v => v !== undefined && v !== null && v !== "")
@@ -178,6 +133,7 @@ function buildFilterOptions() {
   raw.locationsById.forEach((v, k) => {
     if (usedLocIds.has(String(k))) locs.push([k, v?.name || `Local ${k}`]);
   });
+
   locs.sort((a,b) => String(a[1]).localeCompare(String(b[1])));
   locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
 
@@ -190,8 +146,27 @@ function buildFilterOptions() {
     .forEach(p => plSel.append(new Option(p.name || `Player ${p.id}`, String(p.id))));
 }
 
+function applyDefaultsToUI() {
+  // view/tab
+  view = DEFAULTS.view || "partidas";
+  setActiveTab();
+
+  // valores simples
+  el("fYear").value = DEFAULTS.year ?? "";
+  el("fMinTime").value = DEFAULTS.minTime ?? "";
+  el("fMaxTime").value = DEFAULTS.maxTime ?? "";
+
+  // modos
+  setRadio("locMode", DEFAULTS.locMode || "OR");
+  setRadio("plMode", DEFAULTS.plMode || "OR");
+
+  // multis
+  setMultiSelect(el("fLocation"), DEFAULTS.locations || []);
+  setMultiSelect(el("fPlayers"), DEFAULTS.players || []);
+}
+
 function applyFilters() {
-  const locSelected = getSelectedValues(el("fLocation"));
+  const locSelected = [...el("fLocation").selectedOptions].map(o => String(o.value));
   const locMode = getMode("locMode");
 
   const year = el("fYear").value || null;
@@ -199,7 +174,7 @@ function applyFilters() {
   const minT = el("fMinTime").value !== "" ? Number(el("fMinTime").value) : null;
   const maxT = el("fMaxTime").value !== "" ? Number(el("fMaxTime").value) : null;
 
-  const plSelected = getSelectedNumbers(el("fPlayers"));
+  const plSelected = [...el("fPlayers").selectedOptions].map(o => Number(o.value)).filter(n => !Number.isNaN(n));
   const plMode = getMode("plMode");
 
   filteredPlays = raw.plays.filter(play => {
@@ -217,6 +192,7 @@ function applyFilters() {
       if (locMode === "OR") {
         if (!locSelected.includes(locId)) return false;
       } else {
+        // AND com 2+ locais não faz sentido (1 partida = 1 local)
         if (locSelected.length !== 1 || locSelected[0] !== locId) return false;
       }
     }
@@ -244,7 +220,7 @@ function applyFilters() {
 }
 
 /* =========================
-   RENDER – PARTIDAS (sem rating)
+   RENDER – PARTIDAS (SEM RATING)
 ========================= */
 function renderPartidas() {
   destroyTable();
@@ -295,7 +271,7 @@ function renderPartidas() {
 }
 
 /* =========================
-   RENDER – JOGADORES (ordem pedida)
+   RENDER – JOGADORES (ORDEM FIXA)
 ========================= */
 function renderJogadores() {
   destroyTable();
@@ -352,7 +328,7 @@ function renderJogadores() {
 }
 
 /* =========================
-   RENDER – JOGOS (nova aba)
+   RENDER – JOGOS (NOVA ABA)
 ========================= */
 function renderJogos() {
   destroyTable();
@@ -425,25 +401,19 @@ function wireUI() {
 
   btnPartidas.onclick = () => {
     view = "partidas";
-    btnPartidas.classList.add("active");
-    btnJogadores.classList.remove("active");
-    btnJogos.classList.remove("active");
+    setActiveTab();
     render();
   };
 
   btnJogadores.onclick = () => {
     view = "jogadores";
-    btnJogadores.classList.add("active");
-    btnPartidas.classList.remove("active");
-    btnJogos.classList.remove("active");
+    setActiveTab();
     render();
   };
 
   btnJogos.onclick = () => {
     view = "jogos";
-    btnJogos.classList.add("active");
-    btnPartidas.classList.remove("active");
-    btnJogadores.classList.remove("active");
+    setActiveTab();
     render();
   };
 
@@ -463,8 +433,11 @@ function wireUI() {
     el("fMinTime").value = "";
     el("fMaxTime").value = "";
     [...el("fPlayers").options].forEach(o => o.selected = false);
-    document.querySelector('input[name="locMode"][value="OR"]').checked = true;
-    document.querySelector('input[name="plMode"][value="OR"]').checked = true;
+
+    setRadio("locMode", "OR");
+    setRadio("plMode", "OR");
+
+    // NÃO salva nada, apenas limpa nesta sessão
     render();
   };
 }
@@ -487,6 +460,10 @@ async function init() {
 
     el("status").textContent = `OK — ${raw.plays.length} partidas`;
     buildFilterOptions();
+
+    // aplica defaults fixos SEM persistir
+    applyDefaultsToUI();
+
     wireUI();
     render();
 
