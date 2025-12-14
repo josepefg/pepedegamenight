@@ -55,11 +55,11 @@ h1{
   border:1px solid var(--border);
   border-radius:12px;
   background:rgba(255,255,255,0.02);
-  min-width: 190px;
+  min-width:190px;
 }
 
 .group.actions{
-  min-width: unset;
+  min-width:unset;
   padding:0;
   border:none;
   background:transparent;
@@ -87,9 +87,7 @@ h1{
   gap:8px;
 }
 
-.num{
-  width:86px;
-}
+.num{ width:86px; }
 
 .dash{ color:var(--muted); }
 
@@ -113,21 +111,20 @@ table{
 }
 
 /* =========================
-   DARK SELECT FIX (o teu problema)
+   DARK SELECT (corrige fundo branco)
 ========================= */
 .sel{
-  color-scheme: dark;              /* ajuda browsers a respeitarem tema */
+  color-scheme: dark;
   background-color: var(--btn);
   color: var(--ink);
 }
 
 .sel option{
-  background-color: var(--btn);    /* evita fundo branco nas opções */
+  background-color: var(--btn);
   color: var(--ink);
 }
 
-/* Quando o select está focado */
 .sel:focus, .num:focus, .btn:focus{
-  outline: 2px solid rgba(122,162,255,0.25);
-  outline-offset: 1px;
+  outline:2px solid rgba(122,162,255,0.25);
+  outline-offset:1px;
 }
