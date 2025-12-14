@@ -1,8 +1,8 @@
 body { font-family: system-ui, Arial, sans-serif; margin: 0; background: #0b0c10; color: #e6e6e6; }
-.wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
 h1 { margin: 0 0 16px; font-size: 22px; }
 .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .btn { padding: 8px 12px; border-radius: 10px; border: 1px solid #2a2f3a; background: #141720; color: #e6e6e6; cursor: pointer; }
 .btn.active { border-color: #7aa2ff; }
-.status { opacity: .8; font-size: 13px; margin-left: auto; }
+.status { opacity: .85; font-size: 13px; margin-left: auto; }
 table { background: #11131a; border-radius: 12px; overflow: hidden; }
