@@ -40,16 +40,14 @@ function toISOish(dt) {
 }
 
 /* =========================
-   DURAÇÃO (FIX DEFINITIVO)
+   DURAÇÃO
 ========================= */
 function durationMin(play) {
-  // BGStats: campo direto em minutos
   if (play.durationMin !== undefined && play.durationMin !== null && play.durationMin !== "") {
     const v = Number(play.durationMin);
     if (!Number.isNaN(v)) return Math.round(v);
   }
 
-  // Fallbacks comuns
   const minuteKeys = [
     "durationMinutes",
     "playTimeMinutes",
@@ -66,7 +64,6 @@ function durationMin(play) {
     }
   }
 
-  // Alguns exports usam segundos
   const secondKeys = [
     "durationSec",
     "durationSeconds",
@@ -103,13 +100,11 @@ function getSelectedNumbers(sel) {
    FILTROS
 ========================= */
 function buildFilterOptions() {
-  // anos
   const years = [...new Set(raw.plays.map(p => yearOf(p.playDate)).filter(Boolean))].sort();
   const yearSel = el("fYear");
   yearSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
   years.forEach(y => yearSel.append(new Option(y, y)));
 
-  // locais
   const locSel = el("fLocation");
   locSel.innerHTML = "";
   const usedLocIds = new Set(
@@ -120,11 +115,9 @@ function buildFilterOptions() {
   raw.locationsById.forEach((v, k) => {
     if (usedLocIds.has(String(k))) locs.push([k, v?.name || `Local ${k}`]);
   });
-
   locs.sort((a,b) => String(a[1]).localeCompare(String(b[1])));
   locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
 
-  // jogadores
   const plSel = el("fPlayers");
   plSel.innerHTML = "";
   raw.players
@@ -146,15 +139,12 @@ function applyFilters() {
   const plMode = getMode("plMode");
 
   filteredPlays = raw.plays.filter(play => {
-    // ano
     if (year && yearOf(play.playDate) !== year) return false;
 
-    // tempo
     const dur = durationMin(play);
     if (minT !== null && (dur === null || dur < minT)) return false;
     if (maxT !== null && (dur === null || dur > maxT)) return false;
 
-    // local
     if (locSelected.length) {
       const locId = String(play.locationRefId ?? "");
       if (locMode === "OR") {
@@ -164,7 +154,6 @@ function applyFilters() {
       }
     }
 
-    // jogadores
     if (plSelected.length) {
       const ids = new Set((play.playerScores || []).map(ps => ps.playerRefId));
       if (plMode === "OR") {
@@ -187,7 +176,7 @@ function applyFilters() {
 }
 
 /* =========================
-   RENDER
+   RENDER – PARTIDAS
 ========================= */
 function renderPartidas() {
   destroyTable();
@@ -235,6 +224,9 @@ function renderPartidas() {
   });
 }
 
+/* =========================
+   RENDER – JOGADORES (ORDEM NOVA)
+========================= */
 function renderJogadores() {
   destroyTable();
 
@@ -268,10 +260,10 @@ function renderJogadores() {
   const rows = [...agg.values()].map(s => ({
     jogador: s.jogador,
     partidas: s.partidas,
-    vitorias: s.vitorias,
-    winrate: s.partidas ? (100 * s.vitorias / s.partidas).toFixed(1) + "%" : "0%",
     jogos_diferentes: s.games.size,
-    tempo_total_h: (s.tempoMin / 60).toFixed(1)
+    tempo_total_h: (s.tempoMin / 60).toFixed(1),
+    vitorias: s.vitorias,
+    winrate: s.partidas ? (100 * s.vitorias / s.partidas).toFixed(1) + "%" : "0%"
   }));
 
   table = new DataTable("#tabela", {
@@ -279,10 +271,10 @@ function renderJogadores() {
     columns: [
       { title: "Jogador", data: "jogador" },
       { title: "Partidas", data: "partidas" },
-      { title: "Vitórias", data: "vitorias" },
-      { title: "Winrate", data: "winrate" },
       { title: "Jogos diferentes", data: "jogos_diferentes" },
       { title: "Tempo total (h)", data: "tempo_total_h" },
+      { title: "Vitórias", data: "vitorias" },
+      { title: "Winrate", data: "winrate" },
     ],
     pageLength: 25,
     order: [[1, "desc"]],
@@ -290,19 +282,36 @@ function renderJogadores() {
 }
 
 function render() {
-  applyFilters();
   view === "jogadores" ? renderJogadores() : renderPartidas();
 }
 
+/* =========================
+   UI / INIT
+========================= */
 function wireUI() {
-  el("btnPartidas").onclick = () => { view = "partidas"; el("btnPartidas").classList.add("active"); el("btnJogadores").classList.remove("active"); render(); };
-  el("btnJogadores").onclick = () => { view = "jogadores"; el("btnJogadores").classList.add("active"); el("btnPartidas").classList.remove("active"); render(); };
+  el("btnPartidas").onclick = () => {
+    view = "partidas";
+    el("btnPartidas").classList.add("active");
+    el("btnJogadores").classList.remove("active");
+    render();
+  };
 
-  ["fLocation","fYear","fMinTime","fMaxTime","fPlayers"].forEach(id => el(id).addEventListener("change", render));
+  el("btnJogadores").onclick = () => {
+    view = "jogadores";
+    el("btnJogadores").classList.add("active");
+    el("btnPartidas").classList.remove("active");
+    render();
+  };
+
+  ["fLocation","fYear","fMinTime","fMaxTime","fPlayers"].forEach(id =>
+    el(id).addEventListener("change", render)
+  );
   el("fMinTime").addEventListener("input", render);
   el("fMaxTime").addEventListener("input", render);
 
-  document.querySelectorAll('input[name="locMode"], input[name="plMode"]').forEach(r => r.addEventListener("change", render));
+  document.querySelectorAll('input[name="locMode"], input[name="plMode"]').forEach(r =>
+    r.addEventListener("change", render)
+  );
 
   el("btnClear").onclick = () => {
     [...el("fLocation").options].forEach(o => o.selected = false);
@@ -316,9 +325,6 @@ function wireUI() {
   };
 }
 
-/* =========================
-   INIT
-========================= */
 async function init() {
   try {
     const res = await fetch(JSON_PATH, { cache: "no-store" });
