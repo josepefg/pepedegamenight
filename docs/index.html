@@ -5,7 +5,6 @@
   <title>BGStats – Estatísticas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- DataTables -->
   <link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.min.css">
   <link rel="stylesheet" href="style.css?v=1">
 </head>
@@ -40,15 +39,6 @@
       </div>
 
       <div class="group">
-        <label class="lbl">Tempo (min)</label>
-        <div class="row">
-          <input id="fMinTime" class="num" type="number" min="0" step="5" placeholder="min">
-          <span class="dash">–</span>
-          <input id="fMaxTime" class="num" type="number" min="0" step="5" placeholder="max">
-        </div>
-      </div>
-
-      <div class="group">
         <label class="lbl">Jogadores</label>
         <select id="fPlayers" class="sel" multiple size="1" title="Selecione 1+ jogadores"></select>
         <div class="tog">
@@ -58,13 +48,22 @@
       </div>
 
       <div class="group">
-        <label class="lbl">Cooperativos</label>
-        <div class="row">
+        <label class="lbl">Tipo de jogo</label>
+        <div class="row" style="gap:14px">
+          <label class="tog" style="gap:8px">
+            <input id="fIncludeCompetitive" type="checkbox" checked>
+            Competitivos
+          </label>
           <label class="tog" style="gap:8px">
             <input id="fIncludeCoop" type="checkbox" checked>
-            Incluir jogos cooperativos
+            Cooperativos
           </label>
         </div>
+      </div>
+
+      <div class="group">
+        <label class="lbl">Mín. partidas</label>
+        <input id="fMinPlays" class="num" type="number" min="0" step="1" placeholder="ex: 10">
       </div>
 
       <div class="group actions">
@@ -78,11 +77,10 @@
   <table id="tabela" class="display" style="width:100%"></table>
 </main>
 
-<!-- Dependências -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
 
-<!-- Bump versão p/ evitar cache -->
-<script src="app.js?v=6"></script>
+<!-- bump versão p/ evitar cache -->
+<script src="app.js?v=11"></script>
 </body>
 </html>

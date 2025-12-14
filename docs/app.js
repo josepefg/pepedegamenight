@@ -4,15 +4,15 @@ const JSON_PATH = "data/bgstats.json";
    DEFAULTS FIXOS (SEM PERSISTIR)
 ========================= */
 const DEFAULTS = {
-  view: "jogadores",     // "partidas" | "jogadores" | "jogos" | "jogo_jogador"
+  view: "jogadores",
   year: "2025",
-  minTime: "",
-  maxTime: "",
   locMode: "OR",
   plMode: "OR",
   locations: ["2", "6"],
   players: ["2", "3"],
-  includeCoop: true,     // ✅ inclui coop por padrão
+  includeCompetitive: true,
+  includeCoop: true,
+  minPlays: "", // vazio = sem filtro
 };
 
 let raw = null;
@@ -58,33 +58,25 @@ function toISOish(dt) {
 }
 
 function durationMin(play) {
-  if (play && play.durationMin !== undefined && play.durationMin !== null && play.durationMin !== "") {
+  if (play?.durationMin != null && play.durationMin !== "") {
     const v = Number(play.durationMin);
     if (!Number.isNaN(v)) return Math.round(v);
   }
-
-  const minuteKeys = ["durationMinutes", "playTimeMinutes", "playTime", "length", "duration", "time"];
-  for (const k of minuteKeys) {
-    if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
-      const v = Number(play[k]);
-      if (!Number.isNaN(v)) return Math.round(v);
-    }
-  }
-
-  const secondKeys = ["durationSec", "durationSeconds", "playTimeSeconds", "lengthSeconds"];
-  for (const k of secondKeys) {
-    if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
-      const v = Number(play[k]);
-      if (!Number.isNaN(v)) return Math.round(v / 60);
-    }
-  }
-
   return null;
 }
 
-function getMode(radioName) {
-  const x = document.querySelector(`input[name="${radioName}"]:checked`);
-  return x ? x.value : "OR";
+function pct(v) {
+  return (Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "0.0%");
+}
+
+function safeNamePlayer(id) {
+  const k = sid(id);
+  return raw.playersById.get(k)?.name || `Player ${k}`;
+}
+
+function safeNameGame(id) {
+  const k = sid(id);
+  return raw.gamesById.get(k)?.name || `Game ${k}`;
 }
 
 function setRadio(name, value) {
@@ -115,38 +107,20 @@ function setActiveTab() {
   if (activeBtn) activeBtn.classList.add("active");
 }
 
-function pct(v) {
-  return (Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "0.0%");
-}
-
-function safeNamePlayer(playerId) {
-  const k = sid(playerId);
-  return raw.playersById.get(k)?.name || `Player ${k}`;
-}
-
-function safeNameGame(gameId) {
-  const k = sid(gameId);
-  return raw.gamesById.get(k)?.name || `Game ${k}`;
-}
-
-/* ✅ coop = campo "cooperative" no JSON */
+/* =========================
+   COOPERATIVOS
+========================= */
 function isCoopGame(gameId) {
   const g = raw.gamesById.get(sid(gameId));
-  const v = g ? g.cooperative : false;
+  const v = g?.cooperative;
   if (v === true) return true;
   if (typeof v === "string") return ["true", "1", "yes", "sim"].includes(v.toLowerCase());
   if (typeof v === "number") return v === 1;
   return false;
 }
 
-/* ✅ retorna se devemos incluir cooperativos nas estatísticas */
-function includeCoopEnabled() {
-  const coopEl = el("fIncludeCoop");
-  return coopEl ? !!coopEl.checked : true;
-}
-
 /* =========================
-   FILTROS (globais)
+   FILTROS / OPTIONS
 ========================= */
 function buildFilterOptions() {
   const years = [...new Set(raw.plays.map(p => yearOf(p.playDate)).filter(Boolean))].sort();
@@ -157,23 +131,20 @@ function buildFilterOptions() {
   const locSel = el("fLocation");
   locSel.innerHTML = "";
 
-  const usedLocIds = new Set(
-    raw.plays.map(p => sid(p.locationRefId)).filter(v => v !== "")
-  );
-
+  const usedLocIds = new Set(raw.plays.map(p => sid(p.locationRefId)).filter(v => v !== ""));
   const locs = [];
   raw.locationsById.forEach((v, k) => {
     if (usedLocIds.has(k)) locs.push([k, v?.name || `Local ${k}`]);
   });
 
-  locs.sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+  locs.sort((a,b) => String(a[1]).localeCompare(String(b[1])));
   locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
 
   const plSel = el("fPlayers");
   plSel.innerHTML = "";
   raw.players
     .slice()
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+    .sort((a,b) => (a.name || "").localeCompare(b.name || ""))
     .forEach(p => plSel.append(new Option(p.name || `Player ${p.id}`, sid(p.id))));
 }
 
@@ -182,8 +153,6 @@ function applyDefaultsToUI() {
   setActiveTab();
 
   el("fYear").value = DEFAULTS.year ?? "";
-  el("fMinTime").value = DEFAULTS.minTime ?? "";
-  el("fMaxTime").value = DEFAULTS.maxTime ?? "";
 
   setRadio("locMode", DEFAULTS.locMode || "OR");
   setRadio("plMode", DEFAULTS.plMode || "OR");
@@ -191,50 +160,58 @@ function applyDefaultsToUI() {
   setMultiSelect(el("fLocation"), DEFAULTS.locations || []);
   setMultiSelect(el("fPlayers"), DEFAULTS.players || []);
 
-  const coopEl = el("fIncludeCoop");
-  if (coopEl) coopEl.checked = !!DEFAULTS.includeCoop;
+  el("fIncludeCompetitive").checked = !!DEFAULTS.includeCompetitive;
+  el("fIncludeCoop").checked = !!DEFAULTS.includeCoop;
+
+  el("fMinPlays").value = DEFAULTS.minPlays ?? "";
 }
 
-function applyFilters() {
-  const locSelected = [...el("fLocation").selectedOptions].map(o => sid(o.value));
-  const locMode = getMode("locMode");
+function getMinPlays() {
+  const v = el("fMinPlays").value;
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null;
+}
 
+/* =========================
+   APLICA FILTROS (GLOBAL)
+========================= */
+function applyFilters() {
   const year = el("fYear").value || null;
 
-  const minT = el("fMinTime").value !== "" ? Number(el("fMinTime").value) : null;
-  const maxT = el("fMaxTime").value !== "" ? Number(el("fMaxTime").value) : null;
+  const locSelected = [...el("fLocation").selectedOptions].map(o => sid(o.value));
+  const locMode = document.querySelector('input[name="locMode"]:checked')?.value || "OR";
 
   const plSelected = [...el("fPlayers").selectedOptions].map(o => sid(o.value));
-  const plMode = getMode("plMode");
+  const plMode = document.querySelector('input[name="plMode"]:checked')?.value || "OR";
+
+  const includeCompetitive = el("fIncludeCompetitive").checked;
+  const includeCoop = el("fIncludeCoop").checked;
 
   filteredPlays = raw.plays.filter(play => {
+    const coop = isCoopGame(play.gameRefId);
+
+    // tipo de jogo (GLOBAL)
+    if (coop && !includeCoop) return false;
+    if (!coop && !includeCompetitive) return false;
+
+    // ano
     if (year && yearOf(play.playDate) !== year) return false;
 
-    const dur = durationMin(play);
-    if (minT !== null && (dur === null || dur < minT)) return false;
-    if (maxT !== null && (dur === null || dur > maxT)) return false;
-
+    // local
     if (locSelected.length) {
       const locId = sid(play.locationRefId);
-      if (locMode === "OR") {
-        if (!locSelected.includes(locId)) return false;
-      } else {
-        if (locSelected.length !== 1 || locSelected[0] !== locId) return false;
-      }
+      if (locMode === "OR" && !locSelected.includes(locId)) return false;
+      if (locMode === "AND" && locSelected[0] !== locId) return false;
     }
 
+    // jogadores (OU/E)
     if (plSelected.length) {
       const ids = new Set((play.playerScores || []).map(ps => sid(ps.playerRefId)));
       if (plMode === "OR") {
-        let ok = false;
-        for (const id of plSelected) {
-          if (ids.has(id)) { ok = true; break; }
-        }
-        if (!ok) return false;
+        if (![...plSelected].some(id => ids.has(id))) return false;
       } else {
-        for (const id of plSelected) {
-          if (!ids.has(id)) return false;
-        }
+        if (![...plSelected].every(id => ids.has(id))) return false;
       }
     }
 
@@ -245,7 +222,7 @@ function applyFilters() {
 }
 
 /* =========================
-   PARTIDAS (mantém tudo, não filtra coop aqui)
+   PARTIDAS
 ========================= */
 function renderPartidas() {
   destroyTable();
@@ -254,82 +231,64 @@ function renderPartidas() {
     data: toISOish(p.playDate),
     ano: yearOf(p.playDate),
     jogo: safeNameGame(p.gameRefId),
-    local: raw.locationsById.get(sid(p.locationRefId))?.name || sid(p.locationRefId),
+    local: raw.locationsById.get(sid(p.locationRefId))?.name || "",
     tempo: durationMin(p) ?? "",
     jogadores: (p.playerScores || []).map(ps => safeNamePlayer(ps.playerRefId)).join(", "),
     vencedores: (p.playerScores || []).filter(ps => ps.winner).map(ps => safeNamePlayer(ps.playerRefId)).join(", "),
   }));
 
-  window.jQuery("#tabela").append(`
-    <thead>
-      <tr>
-        <th>Data</th>
-        <th>Ano</th>
-        <th>Jogo</th>
-        <th>Local</th>
-        <th>Tempo (min)</th>
-        <th>Jogadores</th>
-        <th>Vencedores</th>
-      </tr>
-    </thead>
-  `);
-
   table = new DataTable("#tabela", {
     data: rows,
     columns: [
-      { data: "data" },
-      { data: "ano" },
-      { data: "jogo" },
-      { data: "local" },
-      { data: "tempo" },
-      { data: "jogadores" },
-      { data: "vencedores" },
+      { title: "Data", data: "data" },
+      { title: "Ano", data: "ano" },
+      { title: "Jogo", data: "jogo" },
+      { title: "Local", data: "local" },
+      { title: "Tempo (min)", data: "tempo" },
+      { title: "Jogadores", data: "jogadores" },
+      { title: "Vencedores", data: "vencedores" },
     ],
-    pageLength: 25,
     order: [[0, "desc"]],
+    pageLength: 25,
   });
 }
 
 /* =========================
-   JOGADORES (✅ agora respeita o filtro coop)
+   JOGADORES (aplica minPlays)
 ========================= */
 function renderJogadores() {
   destroyTable();
 
-  const includeCoop = includeCoopEnabled();
-
-  const agg = new Map(); // playerId(string) -> stats
+  const minPlays = getMinPlays();
+  const agg = new Map();
 
   for (const play of filteredPlays) {
-    const gameId = sid(play.gameRefId);
-    if (!includeCoop && isCoopGame(gameId)) continue; // ✅ aplica aqui
-
     const dur = durationMin(play);
+    const gameId = sid(play.gameRefId);
 
-    for (const ps of (play.playerScores || [])) {
+    for (const ps of play.playerScores || []) {
       const pid = sid(ps.playerRefId);
-      if (!pid) continue;
-
       if (!agg.has(pid)) {
-        agg.set(pid, { jogador: safeNamePlayer(pid), partidas: 0, vitorias: 0, games: new Set(), tempoMin: 0 });
+        agg.set(pid, { jogador: safeNamePlayer(pid), partidas: 0, vitorias: 0, games: new Set(), tempo: 0 });
       }
-
       const s = agg.get(pid);
-      s.partidas += 1;
-      if (ps.winner) s.vitorias += 1;
-      if (gameId) s.games.add(gameId);
-      if (dur != null) s.tempoMin += dur;
+      s.partidas++;
+      if (ps.winner) s.vitorias++;
+      s.games.add(gameId);
+      if (dur != null) s.tempo += dur;
     }
   }
 
-  const rows = [...agg.values()].map(s => ({
+  let rows = [...agg.values()].map(s => ({
     jogador: s.jogador,
     partidas: s.partidas,
     jogos_diferentes: s.games.size,
-    tempo_total_h: (s.tempoMin / 60).toFixed(1),
+    tempo_total_h: (s.tempo / 60).toFixed(1),
     vitorias: s.vitorias,
-    winrate: s.partidas ? (100 * s.vitorias / s.partidas).toFixed(1) + "%" : "0%",
+    winrate: s.partidas ? pct(s.vitorias / s.partidas) : "0%",
   }));
+
+  if (minPlays != null) rows = rows.filter(r => r.partidas >= minPlays);
 
   table = new DataTable("#tabela", {
     data: rows,
@@ -341,84 +300,78 @@ function renderJogadores() {
       { title: "Vitórias", data: "vitorias" },
       { title: "Winrate", data: "winrate" },
     ],
-    pageLength: 25,
     order: [[1, "desc"]],
+    pageLength: 25,
   });
 }
 
 /* =========================
-   AGREGADOR POR JOGO (já respeita o filtro coop)
+   AGREGADOR POR JOGO
 ========================= */
 function aggregateByGame() {
-  const includeCoop = includeCoopEnabled();
-
-  const agg = new Map(); // gameId(string) -> stats
+  const agg = new Map();
 
   for (const play of filteredPlays) {
-    const gameId = sid(play.gameRefId);
-    if (!gameId) continue;
-
-    if (!includeCoop && isCoopGame(gameId)) continue; // ✅
-
-    if (!agg.has(gameId)) {
-      agg.set(gameId, {
-        gameId,
-        jogo: safeNameGame(gameId),
+    const gid = sid(play.gameRefId);
+    if (!agg.has(gid)) {
+      agg.set(gid, {
+        gameId: gid,
+        jogo: safeNameGame(gid),
         partidas: 0,
-        tempoMin: 0,
-        jogadoresUnicos: new Set(),
-        perPlayer: new Map(), // playerId(string) -> {partidas,vitorias,tempoMin}
+        tempo: 0,
+        jogadores: new Set(),
+        perPlayer: new Map(), // pid -> {partidas, vitorias, tempo}
       });
     }
 
-    const g = agg.get(gameId);
-    g.partidas += 1;
-
+    const g = agg.get(gid);
+    g.partidas++;
     const dur = durationMin(play);
-    if (dur != null) g.tempoMin += dur;
+    if (dur != null) g.tempo += dur;
 
-    for (const ps of (play.playerScores || [])) {
+    for (const ps of play.playerScores || []) {
       const pid = sid(ps.playerRefId);
-      if (!pid) continue;
-
-      g.jogadoresUnicos.add(pid);
-
-      if (!g.perPlayer.has(pid)) g.perPlayer.set(pid, { playerId: pid, partidas: 0, vitorias: 0, tempoMin: 0 });
+      g.jogadores.add(pid);
+      if (!g.perPlayer.has(pid)) g.perPlayer.set(pid, { partidas: 0, vitorias: 0, tempo: 0 });
       const pp = g.perPlayer.get(pid);
-
-      pp.partidas += 1;
-      if (ps.winner) pp.vitorias += 1;
-      if (dur != null) pp.tempoMin += dur;
+      pp.partidas++;
+      if (ps.winner) pp.vitorias++;
+      if (dur != null) pp.tempo += dur;
     }
   }
 
   return agg;
 }
 
-function pct(v) {
-  return (Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "0.0%");
-}
-
+/* =========================
+   JOGOS (aplica minPlays no # de partidas do jogo)
+========================= */
 function buildGameDetailsHTML(gameAgg) {
-  const players = [...gameAgg.perPlayer.values()].map(pp => ({
-    jogador: safeNamePlayer(pp.playerId),
-    partidas: pp.partidas,
-    vitorias: pp.vitorias,
-    winrate: pp.partidas ? (pp.vitorias / pp.partidas) : 0,
-    tempo_h: (pp.tempoMin / 60),
-    tempo_med_min: pp.partidas ? (pp.tempoMin / pp.partidas) : 0,
-  }));
+  const minPlays = getMinPlays();
 
-  players.sort((a, b) => (b.vitorias - a.vitorias) || (b.winrate - a.winrate) || (b.partidas - a.partidas));
+  let rows = [];
+  for (const [pid, s] of gameAgg.perPlayer.entries()) {
+    if (minPlays != null && s.partidas < minPlays) continue;
+    rows.push({
+      jogador: safeNamePlayer(pid),
+      partidas: s.partidas,
+      vitorias: s.vitorias,
+      winrate: s.partidas ? pct(s.vitorias / s.partidas) : "0%",
+      tempo_h: (s.tempo / 60).toFixed(1),
+      tempo_med_min: s.partidas ? (s.tempo / s.partidas).toFixed(0) : "0",
+    });
+  }
 
-  const rows = players.map(p => `
+  rows.sort((a,b) => (b.vitorias - a.vitorias) || (parseFloat(b.winrate) - parseFloat(a.winrate)) || (b.partidas - a.partidas));
+
+  const body = rows.map(r => `
     <tr>
-      <td>${p.jogador}</td>
-      <td style="text-align:right">${p.partidas}</td>
-      <td style="text-align:right">${p.vitorias}</td>
-      <td style="text-align:right">${pct(p.winrate)}</td>
-      <td style="text-align:right">${p.tempo_h.toFixed(1)}</td>
-      <td style="text-align:right">${p.tempo_med_min.toFixed(0)}</td>
+      <td>${r.jogador}</td>
+      <td style="text-align:right">${r.partidas}</td>
+      <td style="text-align:right">${r.vitorias}</td>
+      <td style="text-align:right">${r.winrate}</td>
+      <td style="text-align:right">${r.tempo_h}</td>
+      <td style="text-align:right">${r.tempo_med_min}</td>
     </tr>
   `).join("");
 
@@ -438,7 +391,7 @@ function buildGameDetailsHTML(gameAgg) {
             <th style="text-align:right">Tempo médio (min)</th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        <tbody>${body}</tbody>
       </table>
     </div>
   `;
@@ -447,36 +400,31 @@ function buildGameDetailsHTML(gameAgg) {
 function renderJogos() {
   destroyTable();
 
+  const minPlays = getMinPlays();
   const agg = aggregateByGame();
 
-  const rows = [...agg.values()].map(g => {
+  let rows = [...agg.values()].map(g => {
     let best = null;
-    for (const pp of g.perPlayer.values()) {
-      const winrate = pp.partidas ? (pp.vitorias / pp.partidas) : 0;
-      const cand = { ...pp, winrate };
-      if (!best) best = cand;
-      else {
-        const a = cand, b = best;
-        if (
-          (a.vitorias > b.vitorias) ||
-          (a.vitorias === b.vitorias && a.winrate > b.winrate) ||
-          (a.vitorias === b.vitorias && a.winrate === b.winrate && a.partidas > b.partidas)
-        ) best = cand;
+    for (const [pid, s] of g.perPlayer.entries()) {
+      const wr = s.partidas ? (s.vitorias / s.partidas) : 0;
+      if (!best || s.vitorias > best.vitorias || (s.vitorias === best.vitorias && wr > best.wr)) {
+        best = { pid, ...s, wr };
       }
     }
 
     return {
       jogo: g.jogo,
       partidas: g.partidas,
-      tempo_total_h: (g.tempoMin / 60).toFixed(1),
-      tempo_medio_min: g.partidas ? (g.tempoMin / g.partidas).toFixed(0) : "0",
-      jogadores_unicos: g.jogadoresUnicos.size,
-      top_vencedor: best ? safeNamePlayer(best.playerId) : "",
+      tempo_total_h: (g.tempo / 60).toFixed(1),
+      jogadores_unicos: g.jogadores.size,
+      top_vencedor: best ? safeNamePlayer(best.pid) : "",
       top_vitorias: best ? best.vitorias : 0,
-      top_winrate: best ? pct(best.winrate) : "0.0%",
+      top_winrate: best ? pct(best.wr) : "0%",
       _details: g,
     };
   });
+
+  if (minPlays != null) rows = rows.filter(r => r.partidas >= minPlays);
 
   table = new DataTable("#tabela", {
     data: rows,
@@ -484,14 +432,13 @@ function renderJogos() {
       { title: "Jogo", data: "jogo" },
       { title: "Partidas", data: "partidas" },
       { title: "Tempo total (h)", data: "tempo_total_h" },
-      { title: "Tempo médio (min)", data: "tempo_medio_min" },
       { title: "Jogadores únicos", data: "jogadores_unicos" },
       { title: "Top vencedor", data: "top_vencedor" },
       { title: "Vitórias (top)", data: "top_vitorias" },
       { title: "Winrate (top)", data: "top_winrate" },
     ],
-    pageLength: 25,
     order: [[1, "desc"]],
+    pageLength: 25,
   });
 
   window.jQuery("#tabela tbody").off("click").on("click", "tr", function () {
@@ -510,26 +457,32 @@ function renderJogos() {
   });
 }
 
+/* =========================
+   JOGO x JOGADOR (aplica minPlays por par)
+========================= */
 function renderJogoJogador() {
   destroyTable();
 
+  const minPlays = getMinPlays();
   const agg = aggregateByGame();
-  const rows = [];
+  let rows = [];
 
   for (const g of agg.values()) {
-    for (const pp of g.perPlayer.values()) {
-      const wr = pp.partidas ? (pp.vitorias / pp.partidas) : 0;
+    for (const [pid, s] of g.perPlayer.entries()) {
+      const wr = s.partidas ? (s.vitorias / s.partidas) : 0;
       rows.push({
         jogo: g.jogo,
-        jogador: safeNamePlayer(pp.playerId),
-        partidas: pp.partidas,
-        vitorias: pp.vitorias,
-        winrate: pct(wr),
-        tempo_total_h: (pp.tempoMin / 60).toFixed(1),
-        tempo_medio_min: pp.partidas ? (pp.tempoMin / pp.partidas).toFixed(0) : "0",
+        jogador: safeNamePlayer(pid),
+        partidas: s.partidas,
+        vitorias: s.vitorias,
+        winrate: s.partidas ? pct(wr) : "0%",
+        tempo_total_h: (s.tempo / 60).toFixed(1),
+        tempo_medio_min: s.partidas ? (s.tempo / s.partidas).toFixed(0) : "0",
       });
     }
   }
+
+  if (minPlays != null) rows = rows.filter(r => r.partidas >= minPlays);
 
   table = new DataTable("#tabela", {
     data: rows,
@@ -542,8 +495,8 @@ function renderJogoJogador() {
       { title: "Tempo total (h)", data: "tempo_total_h" },
       { title: "Tempo médio (min)", data: "tempo_medio_min" },
     ],
-    pageLength: 25,
     order: [[2, "desc"]],
+    pageLength: 25,
   });
 }
 
@@ -567,28 +520,28 @@ function wireUI() {
   el("btnJogos").onclick = () => { view = "jogos"; setActiveTab(); render(); };
   el("btnJogoJogador").onclick = () => { view = "jogo_jogador"; setActiveTab(); render(); };
 
-  ["fLocation", "fYear", "fMinTime", "fMaxTime", "fPlayers"].forEach(id =>
-    el(id).addEventListener("change", render)
-  );
-  el("fMinTime").addEventListener("input", render);
-  el("fMaxTime").addEventListener("input", render);
+  // tudo que muda filtro → re-render
+  ["fLocation","fYear","fPlayers","fIncludeCompetitive","fIncludeCoop","fMinPlays"].forEach(id => {
+    el(id).addEventListener("change", render);
+  });
 
   document.querySelectorAll('input[name="locMode"], input[name="plMode"]').forEach(r =>
     r.addEventListener("change", render)
   );
 
-  const coopEl = el("fIncludeCoop");
-  if (coopEl) coopEl.addEventListener("change", render);
-
   el("btnClear").onclick = () => {
     [...el("fLocation").options].forEach(o => o.selected = false);
     el("fYear").value = "";
-    el("fMinTime").value = "";
-    el("fMaxTime").value = "";
     [...el("fPlayers").options].forEach(o => o.selected = false);
+
     setRadio("locMode", "OR");
     setRadio("plMode", "OR");
-    if (coopEl) coopEl.checked = true;
+
+    el("fIncludeCompetitive").checked = true;
+    el("fIncludeCoop").checked = true;
+
+    el("fMinPlays").value = "";
+
     render();
   };
 }
@@ -614,7 +567,6 @@ async function init() {
     applyDefaultsToUI();
     wireUI();
     render();
-
   } catch (e) {
     console.error(e);
     el("status").textContent = `Erro: ${e.message}`;
