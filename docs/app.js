@@ -1,3 +1,5 @@
+document.getElementById("status").textContent = "JS carregou ✅";
+
 let raw = null;
 let table = null;
 let filteredPlays = [];
