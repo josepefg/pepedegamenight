@@ -191,21 +191,17 @@ function applyFilters() {
   filteredPlays = raw.plays.filter(play => {
     const coop = isCoopGame(play.gameRefId);
 
-    // tipo de jogo (GLOBAL)
     if (coop && !includeCoop) return false;
     if (!coop && !includeCompetitive) return false;
 
-    // ano
     if (year && yearOf(play.playDate) !== year) return false;
 
-    // local
     if (locSelected.length) {
       const locId = sid(play.locationRefId);
       if (locMode === "OR" && !locSelected.includes(locId)) return false;
       if (locMode === "AND" && locSelected[0] !== locId) return false;
     }
 
-    // jogadores (OU/E)
     if (plSelected.length) {
       const ids = new Set((play.playerScores || []).map(ps => sid(ps.playerRefId)));
       if (plMode === "OR") {
@@ -254,7 +250,57 @@ function renderPartidas() {
 }
 
 /* =========================
-   JOGADORES (aplica minPlays)
+   AGREGADORES
+========================= */
+function aggregatePlayersTotals() {
+  // total de partidas por jogador (no dataset filtrado)
+  const totals = new Map(); // pid -> partidas
+  for (const play of filteredPlays) {
+    for (const ps of play.playerScores || []) {
+      const pid = sid(ps.playerRefId);
+      totals.set(pid, (totals.get(pid) || 0) + 1);
+    }
+  }
+  return totals;
+}
+
+function aggregateByGame() {
+  const agg = new Map();
+
+  for (const play of filteredPlays) {
+    const gid = sid(play.gameRefId);
+    if (!agg.has(gid)) {
+      agg.set(gid, {
+        gameId: gid,
+        jogo: safeNameGame(gid),
+        partidas: 0,
+        tempo: 0,
+        jogadores: new Set(),
+        perPlayer: new Map(), // pid -> {partidas, vitorias, tempo}
+      });
+    }
+
+    const g = agg.get(gid);
+    g.partidas++;
+    const dur = durationMin(play);
+    if (dur != null) g.tempo += dur;
+
+    for (const ps of play.playerScores || []) {
+      const pid = sid(ps.playerRefId);
+      g.jogadores.add(pid);
+      if (!g.perPlayer.has(pid)) g.perPlayer.set(pid, { partidas: 0, vitorias: 0, tempo: 0 });
+      const pp = g.perPlayer.get(pid);
+      pp.partidas++;
+      if (ps.winner) pp.vitorias++;
+      if (dur != null) pp.tempo += dur;
+    }
+  }
+
+  return agg;
+}
+
+/* =========================
+   JOGADORES (minPlays por jogador)
 ========================= */
 function renderJogadores() {
   destroyTable();
@@ -306,51 +352,14 @@ function renderJogadores() {
 }
 
 /* =========================
-   AGREGADOR POR JOGO
-========================= */
-function aggregateByGame() {
-  const agg = new Map();
-
-  for (const play of filteredPlays) {
-    const gid = sid(play.gameRefId);
-    if (!agg.has(gid)) {
-      agg.set(gid, {
-        gameId: gid,
-        jogo: safeNameGame(gid),
-        partidas: 0,
-        tempo: 0,
-        jogadores: new Set(),
-        perPlayer: new Map(), // pid -> {partidas, vitorias, tempo}
-      });
-    }
-
-    const g = agg.get(gid);
-    g.partidas++;
-    const dur = durationMin(play);
-    if (dur != null) g.tempo += dur;
-
-    for (const ps of play.playerScores || []) {
-      const pid = sid(ps.playerRefId);
-      g.jogadores.add(pid);
-      if (!g.perPlayer.has(pid)) g.perPlayer.set(pid, { partidas: 0, vitorias: 0, tempo: 0 });
-      const pp = g.perPlayer.get(pid);
-      pp.partidas++;
-      if (ps.winner) pp.vitorias++;
-      if (dur != null) pp.tempo += dur;
-    }
-  }
-
-  return agg;
-}
-
-/* =========================
-   JOGOS (aplica minPlays no # de partidas do jogo)
+   JOGOS (minPlays por jogo)
 ========================= */
 function buildGameDetailsHTML(gameAgg) {
   const minPlays = getMinPlays();
 
   let rows = [];
   for (const [pid, s] of gameAgg.perPlayer.entries()) {
+    // aqui continua sendo "mínimo dentro do jogo" porque é o detalhe do jogo
     if (minPlays != null && s.partidas < minPlays) continue;
     rows.push({
       jogador: safeNamePlayer(pid),
@@ -362,7 +371,7 @@ function buildGameDetailsHTML(gameAgg) {
     });
   }
 
-  rows.sort((a,b) => (b.vitorias - a.vitorias) || (parseFloat(b.winrate) - parseFloat(a.winrate)) || (b.partidas - a.partidas));
+  rows.sort((a,b) => (b.vitorias - a.vitorias) || (b.partidas - a.partidas));
 
   const body = rows.map(r => `
     <tr>
@@ -458,44 +467,50 @@ function renderJogos() {
 }
 
 /* =========================
-   JOGO x JOGADOR (aplica minPlays por par)
+   JOGO x JOGADOR
+   ✅ minPlays agora é pelo TOTAL do jogador (no dataset filtrado)
 ========================= */
 function renderJogoJogador() {
   destroyTable();
 
   const minPlays = getMinPlays();
+  const playerTotals = aggregatePlayersTotals(); // ✅ total por jogador
   const agg = aggregateByGame();
+
   let rows = [];
 
   for (const g of agg.values()) {
     for (const [pid, s] of g.perPlayer.entries()) {
+      const total = playerTotals.get(pid) || 0;
+      if (minPlays != null && total < minPlays) continue; // ✅ aqui é o total do jogador
+
       const wr = s.partidas ? (s.vitorias / s.partidas) : 0;
       rows.push({
         jogo: g.jogo,
         jogador: safeNamePlayer(pid),
-        partidas: s.partidas,
-        vitorias: s.vitorias,
-        winrate: s.partidas ? pct(wr) : "0%",
-        tempo_total_h: (s.tempo / 60).toFixed(1),
-        tempo_medio_min: s.partidas ? (s.tempo / s.partidas).toFixed(0) : "0",
+        partidas_no_jogo: s.partidas,
+        vitorias_no_jogo: s.vitorias,
+        winrate_no_jogo: s.partidas ? pct(wr) : "0%",
+        partidas_total_jogador: total,
+        tempo_total_h_no_jogo: (s.tempo / 60).toFixed(1),
+        tempo_medio_min_no_jogo: s.partidas ? (s.tempo / s.partidas).toFixed(0) : "0",
       });
     }
   }
-
-  if (minPlays != null) rows = rows.filter(r => r.partidas >= minPlays);
 
   table = new DataTable("#tabela", {
     data: rows,
     columns: [
       { title: "Jogo", data: "jogo" },
       { title: "Jogador", data: "jogador" },
-      { title: "Partidas", data: "partidas" },
-      { title: "Vitórias", data: "vitorias" },
-      { title: "Winrate", data: "winrate" },
-      { title: "Tempo total (h)", data: "tempo_total_h" },
-      { title: "Tempo médio (min)", data: "tempo_medio_min" },
+      { title: "Partidas no jogo", data: "partidas_no_jogo" },
+      { title: "Vitórias no jogo", data: "vitorias_no_jogo" },
+      { title: "Winrate no jogo", data: "winrate_no_jogo" },
+      { title: "Partidas total (jogador)", data: "partidas_total_jogador" },
+      { title: "Tempo total (h) no jogo", data: "tempo_total_h_no_jogo" },
+      { title: "Tempo médio (min) no jogo", data: "tempo_medio_min_no_jogo" },
     ],
-    order: [[2, "desc"]],
+    order: [[5, "desc"]], // total do jogador
     pageLength: 25,
   });
 }
@@ -520,7 +535,6 @@ function wireUI() {
   el("btnJogos").onclick = () => { view = "jogos"; setActiveTab(); render(); };
   el("btnJogoJogador").onclick = () => { view = "jogo_jogador"; setActiveTab(); render(); };
 
-  // tudo que muda filtro → re-render
   ["fLocation","fYear","fPlayers","fIncludeCompetitive","fIncludeCoop","fMinPlays"].forEach(id => {
     el(id).addEventListener("change", render);
   });
