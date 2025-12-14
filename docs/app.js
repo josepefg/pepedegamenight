@@ -6,13 +6,12 @@ const JSON_PATH = "data/bgstats.json";
 const DEFAULTS = {
   view: "jogadores",
   year: "2025",
-  locMode: "OR",
   plMode: "OR",
   locations: ["2", "6"],
   players: ["2", "3"],
   includeCompetitive: true,
   includeCoop: true,
-  minPlays: "", // vazio = sem filtro
+  minPlays: "",
 };
 
 let raw = null;
@@ -155,7 +154,6 @@ function applyDefaultsToUI() {
 
   el("fYear").value = DEFAULTS.year ?? "";
 
-  setRadio("locMode", DEFAULTS.locMode || "OR");
   setRadio("plMode", DEFAULTS.plMode || "OR");
 
   setMultiSelect(el("fLocation"), DEFAULTS.locations || []);
@@ -176,22 +174,22 @@ function getMinPlays() {
 
 /* =========================
    FILTRO NEUTRO (sem tipo de jogo)
+   - Local: sempre OU
 ========================= */
 function passesNeutralFilters(play) {
   const year = el("fYear").value || null;
 
   const locSelected = [...el("fLocation").selectedOptions].map(o => sid(o.value));
-  const locMode = document.querySelector('input[name="locMode"]:checked')?.value || "OR";
 
   const plSelected = [...el("fPlayers").selectedOptions].map(o => sid(o.value));
   const plMode = document.querySelector('input[name="plMode"]:checked')?.value || "OR";
 
   if (year && yearOf(play.playDate) !== year) return false;
 
+  // Local: SEMPRE OU
   if (locSelected.length) {
     const locId = sid(play.locationRefId);
-    if (locMode === "OR" && !locSelected.includes(locId)) return false;
-    if (locMode === "AND" && locSelected[0] !== locId) return false;
+    if (!locSelected.includes(locId)) return false;
   }
 
   if (plSelected.length) {
@@ -213,10 +211,8 @@ function applyFilters() {
   const includeCompetitive = el("fIncludeCompetitive").checked;
   const includeCoop = el("fIncludeCoop").checked;
 
-  // 1) base neutra (sem tipo de jogo)
   baseFilteredPlays = raw.plays.filter(passesNeutralFilters);
 
-  // 2) aplica tipo de jogo em cima da base
   filteredPlays = baseFilteredPlays.filter(play => {
     const coop = isCoopGame(play.gameRefId);
     if (coop && !includeCoop) return false;
@@ -231,8 +227,7 @@ function applyFilters() {
    AGREGADORES
 ========================= */
 function aggregatePlayersTotalsFromPlays(plays) {
-  // total de partidas por jogador a partir de um conjunto de plays
-  const totals = new Map(); // pid -> partidas
+  const totals = new Map();
   for (const play of plays) {
     for (const ps of play.playerScores || []) {
       const pid = sid(ps.playerRefId);
@@ -254,7 +249,7 @@ function aggregateByGame() {
         partidas: 0,
         tempo: 0,
         jogadores: new Set(),
-        perPlayer: new Map(), // pid -> {partidas, vitorias, tempo}
+        perPlayer: new Map(),
       });
     }
 
@@ -311,16 +306,13 @@ function renderPartidas() {
 
 /* =========================
    JOGADORES
-   - Partidas (filtrado): usa filteredPlays
-   - Partidas total (jogador): usa baseFilteredPlays (sem tipo de jogo)
-   - minPlays filtra por "Partidas total"
 ========================= */
 function renderJogadores() {
   destroyTable();
 
   const minPlays = getMinPlays();
 
-  const totalsByPlayer = aggregatePlayersTotalsFromPlays(baseFilteredPlays); // ✅ estável ao mudar coop/competitive
+  const totalsByPlayer = aggregatePlayersTotalsFromPlays(baseFilteredPlays);
 
   const agg = new Map();
 
@@ -347,8 +339,8 @@ function renderJogadores() {
 
     return {
       jogador: stats.jogador,
-      partidas_total: total,                 // ✅ nova coluna
-      partidas_filtrado: stats.partidas,     // ✅ o que aparece no recorte atual
+      partidas_total: total,
+      partidas_filtrado: stats.partidas,
       jogos_diferentes: stats.games.size,
       tempo_total_h: (stats.tempo / 60).toFixed(1),
       vitorias: stats.vitorias,
@@ -369,13 +361,13 @@ function renderJogadores() {
       { title: "Vitórias", data: "vitorias" },
       { title: "Winrate", data: "winrate" },
     ],
-    order: [[1, "desc"]], // por partidas total
+    order: [[1, "desc"]],
     pageLength: 25,
   });
 }
 
 /* =========================
-   JOGOS (minPlays por jogo — mantém igual)
+   JOGOS
 ========================= */
 function buildGameDetailsHTML(gameAgg) {
   const minPlays = getMinPlays();
@@ -491,13 +483,12 @@ function renderJogos() {
 
 /* =========================
    JOGO x JOGADOR
-   - minPlays por total do jogador (baseFilteredPlays) => estável ao mudar coop
 ========================= */
 function renderJogoJogador() {
   destroyTable();
 
   const minPlays = getMinPlays();
-  const totalsByPlayer = aggregatePlayersTotalsFromPlays(baseFilteredPlays); // ✅ estável
+  const totalsByPlayer = aggregatePlayersTotalsFromPlays(baseFilteredPlays);
   const agg = aggregateByGame();
 
   let rows = [];
@@ -562,7 +553,7 @@ function wireUI() {
     el(id).addEventListener("change", render);
   });
 
-  document.querySelectorAll('input[name="locMode"], input[name="plMode"]').forEach(r =>
+  document.querySelectorAll('input[name="plMode"]').forEach(r =>
     r.addEventListener("change", render)
   );
 
@@ -571,7 +562,6 @@ function wireUI() {
     el("fYear").value = "";
     [...el("fPlayers").options].forEach(o => o.selected = false);
 
-    setRadio("locMode", "OR");
     setRadio("plMode", "OR");
 
     el("fIncludeCompetitive").checked = true;
