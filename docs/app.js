@@ -4,10 +4,14 @@ let filteredPlays = [];
 
 const JSON_PATH = "data/bgstats.json"; // dentro de docs/data/
 
+function $(id) {
+  return document.getElementById(id);
+}
+
 function destroyTable() {
   if (table) {
     table.destroy();
-    $("#tabela").empty();
+    window.jQuery("#tabela").empty();
     table = null;
   }
 }
@@ -44,8 +48,7 @@ function getYear(dt) {
   return Number.isNaN(d.getTime()) ? "" : String(d.getFullYear());
 }
 
-// BGStats às vezes guarda duração com nomes diferentes.
-// Aqui tentamos achar um campo “provável”.
+// tenta achar duração (min)
 function getDurationMinutes(play) {
   const candidates = [
     "durationMinutes", "playTimeMinutes", "playTime", "length", "duration", "time",
@@ -56,15 +59,13 @@ function getDurationMinutes(play) {
     if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
       const v = Number(play[k]);
       if (!Number.isNaN(v)) {
-        // heurística: se parece segundos, converte
         if (k.toLowerCase().includes("second")) return Math.round(v / 60);
-        // se for muito grande (ex 5400) pode ser segundos mesmo
-        if (v > 600) return Math.round(v / 60);
+        if (v > 600) return Math.round(v / 60); // heurística p/ segundos
         return Math.round(v);
       }
     }
   }
-  return null; // desconhecido
+  return null;
 }
 
 function parseScore(scoreStr) {
@@ -77,17 +78,15 @@ function parseScore(scoreStr) {
 }
 
 function buildOptions() {
-  // Locais
-  const locSel = document.getElementById("fLocation");
-  const yearsSel = document.getElementById("fYear");
-  const togetherSel = document.getElementById("fPlayersTogether");
+  const locSel = $("fLocation");
+  const yearsSel = $("fYear");
+  const togetherSel = $("fPlayersTogether");
 
-  // limpa (mantém o primeiro option “todos” nos 2 primeiros)
+  // limpa (mantém primeiro option nos dois primeiros)
   locSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
   yearsSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
   togetherSel.innerHTML = "";
 
-  // locais existentes nas plays
   const locSet = new Set();
   const yearSet = new Set();
 
@@ -99,15 +98,14 @@ function buildOptions() {
     if (y) yearSet.add(y);
   }
 
-  // popula locais com nome
   [...locSet].sort((a,b)=>a.localeCompare(b)).forEach(id => {
     const opt = document.createElement("option");
     opt.value = id;
-    opt.textContent = getLocationName(Number.isNaN(Number(id)) ? id : Number(id)) || `Local ${id}`;
+    const numericId = Number(id);
+    opt.textContent = getLocationName(Number.isNaN(numericId) ? id : numericId) || `Local ${id}`;
     locSel.appendChild(opt);
   });
 
-  // anos
   [...yearSet].sort().forEach(y => {
     const opt = document.createElement("option");
     opt.value = y;
@@ -115,7 +113,6 @@ function buildOptions() {
     yearsSel.appendChild(opt);
   });
 
-  // jogadores (multi-select “together”)
   const players = (raw.players || []).slice().sort((a,b) => (a.name||"").localeCompare(b.name||""));
   for (const pl of players) {
     const opt = document.createElement("option");
@@ -126,19 +123,21 @@ function buildOptions() {
 }
 
 function readFilters() {
-  const locationId = document.getElementById("fLocation").value; // string
-  const year = document.getElementById("fYear").value;          // string
-  const minTime = document.getElementById("fMinTime").value;
-  const maxTime = document.getElementById("fMaxTime").value;
+  const locationId = $("fLocation").value;
+  const year = $("fYear").value;
+  const minTimeStr = $("fMinTime").value;
+  const maxTimeStr = $("fMaxTime").value;
 
-  const togetherSel = document.getElementById("fPlayersTogether");
-  const togetherIds = [...togetherSel.selectedOptions].map(o => Number(o.value)).filter(v => !Number.isNaN(v));
+  const togetherSel = $("fPlayersTogether");
+  const togetherIds = [...togetherSel.selectedOptions]
+    .map(o => Number(o.value))
+    .filter(v => !Number.isNaN(v));
 
   return {
     locationId: locationId || null,
     year: year || null,
-    minTime: minTime !== "" ? Number(minTime) : null,
-    maxTime: maxTime !== "" ? Number(maxTime) : null,
+    minTime: minTimeStr !== "" ? Number(minTimeStr) : null,
+    maxTime: maxTimeStr !== "" ? Number(maxTimeStr) : null,
     togetherIds,
   };
 }
@@ -147,39 +146,31 @@ function applyFilters() {
   const f = readFilters();
 
   filteredPlays = raw.plays.filter(play => {
-    // Local
     if (f.locationId) {
       if (String(play.locationRefId ?? "") !== String(f.locationId)) return false;
     }
-
-    // Ano
     if (f.year) {
       if (getYear(play.playDate) !== f.year) return false;
     }
 
-    // Tempo (min)
     const dur = getDurationMinutes(play);
     if (f.minTime !== null) {
-      // se não tem duração, você pode escolher: excluir ou incluir. Aqui: EXCLUI.
       if (dur === null || dur < f.minTime) return false;
     }
     if (f.maxTime !== null) {
       if (dur === null || dur > f.maxTime) return false;
     }
 
-    // Jogadores “together”: TODOS precisam estar presentes
     if (f.togetherIds.length) {
       const ids = new Set((play.playerScores || []).map(ps => ps.playerRefId));
       for (const needed of f.togetherIds) {
         if (!ids.has(needed)) return false;
       }
     }
-
     return true;
   });
 
-  const status = document.getElementById("status");
-  status.textContent = `Filtrado: ${filteredPlays.length} / ${raw.plays.length} partidas`;
+  $("status").textContent = `Filtrado: ${filteredPlays.length} / ${raw.plays.length} partidas`;
 }
 
 function renderPartidas() {
@@ -187,7 +178,6 @@ function renderPartidas() {
 
   const rows = filteredPlays.map(play => {
     const duration = getDurationMinutes(play);
-
     const players = (play.playerScores || []).map(ps => getPlayerName(ps.playerRefId)).join(", ");
     const winners = (play.playerScores || []).filter(ps => ps.winner).map(ps => getPlayerName(ps.playerRefId)).join(", ");
 
@@ -210,7 +200,7 @@ function renderPartidas() {
     };
   });
 
-  $("#tabela").append(`
+  window.jQuery("#tabela").append(`
     <thead>
       <tr>
         <th>Data</th>
@@ -293,7 +283,7 @@ function renderJogadores() {
     score_medio: s.scoreCount ? (s.scoreSum / s.scoreCount).toFixed(2) : ""
   }));
 
-  $("#tabela").append(`
+  window.jQuery("#tabela").append(`
     <thead>
       <tr>
         <th>Jogador</th>
@@ -323,33 +313,36 @@ function renderJogadores() {
 
 function refreshActiveView() {
   applyFilters();
-  if (document.getElementById("btnJogadores").classList.contains("active")) renderJogadores();
+  if ($("btnJogadores").classList.contains("active")) renderJogadores();
   else renderPartidas();
 }
 
 function wireFilters() {
   const ids = ["fLocation", "fYear", "fMinTime", "fMaxTime", "fPlayersTogether"];
-  ids.forEach(id => document.getElementById(id).addEventListener("change", refreshActiveView));
-  document.getElementById("fMinTime").addEventListener("input", refreshActiveView);
-  document.getElementById("fMaxTime").addEventListener("input", refreshActiveView);
+  ids.forEach(id => $(id).addEventListener("change", refreshActiveView));
+  $("fMinTime").addEventListener("input", refreshActiveView);
+  $("fMaxTime").addEventListener("input", refreshActiveView);
 
-  document.getElementById("btnClear").onclick = () => {
-    document.getElementById("fLocation").value = "";
-    document.getElementById("fYear").value = "";
-    document.getElementById("fMinTime").value = "";
-    document.getElementById("fMaxTime").value = "";
-    const sel = document.getElementById("fPlayersTogether");
+  $("btnClear").onclick = () => {
+    $("fLocation").value = "";
+    $("fYear").value = "";
+    $("fMinTime").value = "";
+    $("fMaxTime").value = "";
+    const sel = $("fPlayersTogether");
     [...sel.options].forEach(o => o.selected = false);
     refreshActiveView();
   };
 }
 
 async function main() {
-  const status = document.getElementById("status");
+  const statusEl = $("status");
+  const btnPartidas = $("btnPartidas");
+  const btnJogadores = $("btnJogadores");
 
   try {
     const res = await fetch(JSON_PATH, { cache: "no-store" });
     if (!res.ok) throw new Error(`Não consegui ler ${JSON_PATH} (HTTP ${res.status})`);
+
     const j = await res.json();
 
     raw = {
@@ -366,7 +359,7 @@ async function main() {
     wireFilters();
 
     filteredPlays = raw.plays.slice();
-    status.textContent = `OK — ${raw.plays.length} partidas`;
+    statusEl.textContent = `OK — ${raw.plays.length} partidas`;
     renderPartidas();
 
     btnPartidas.onclick = () => {
@@ -382,7 +375,7 @@ async function main() {
 
   } catch (e) {
     console.error(e);
-    status.textContent = `Erro: ${e.message}`;
+    statusEl.textContent = `Erro: ${e.message} (veja Console/F12)`;
   }
 }
 
