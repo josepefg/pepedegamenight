@@ -1,28 +1,28 @@
-<!doctype html>
-<html lang="pt-br">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BGStats — Estatísticas</title>
+<div class="toolbar">
+  <button id="btnPartidas" class="btn active">Partidas</button>
+  <button id="btnJogadores" class="btn">Jogadores</button>
 
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.min.css">
-</head>
-<body>
-  <main class="wrap">
-    <h1>BGStats — Estatísticas</h1>
+  <select id="fLocation" class="select">
+    <option value="">Local: todos</option>
+  </select>
 
-    <div class="toolbar">
-      <button id="btnPartidas" class="btn active">Partidas</button>
-      <button id="btnJogadores" class="btn">Jogadores</button>
-      <span id="status" class="status">Carregando…</span>
-    </div>
+  <select id="fYear" class="select">
+    <option value="">Ano: todos</option>
+  </select>
 
-    <table id="tabela" class="display" style="width:100%"></table>
-  </main>
+  <label class="label">
+    Tempo (min):
+    <input id="fMinTime" type="number" min="0" step="5" placeholder="min" class="num" />
+    —
+    <input id="fMaxTime" type="number" min="0" step="5" placeholder="max" class="num" />
+  </label>
 
-  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-  <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
-  <script src="app.js"></script>
-</body>
-</html>
+  <label class="label">
+    Jogadores juntos:
+    <select id="fPlayersTogether" class="select" multiple size="1"></select>
+  </label>
+
+  <button id="btnClear" class="btn">Limpar filtros</button>
+
+  <span id="status" class="status">Carregando…</span>
+</div>
