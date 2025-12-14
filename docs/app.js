@@ -40,10 +40,10 @@ function toISOish(dt) {
 }
 
 /* =========================
-   DURAÇÃO
+   DURAÇÃO (usa durationMin do BGStats)
 ========================= */
 function durationMin(play) {
-  if (play.durationMin !== undefined && play.durationMin !== null && play.durationMin !== "") {
+  if (play && play.durationMin !== undefined && play.durationMin !== null && play.durationMin !== "") {
     const v = Number(play.durationMin);
     if (!Number.isNaN(v)) return Math.round(v);
   }
@@ -56,23 +56,16 @@ function durationMin(play) {
     "duration",
     "time"
   ];
-
   for (const k of minuteKeys) {
-    if (play[k] !== undefined && play[k] !== null && play[k] !== "") {
+    if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
       const v = Number(play[k]);
       if (!Number.isNaN(v)) return Math.round(v);
     }
   }
 
-  const secondKeys = [
-    "durationSec",
-    "durationSeconds",
-    "playTimeSeconds",
-    "lengthSeconds"
-  ];
-
+  const secondKeys = ["durationSec", "durationSeconds", "playTimeSeconds", "lengthSeconds"];
   for (const k of secondKeys) {
-    if (play[k] !== undefined && play[k] !== null && play[k] !== "") {
+    if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
       const v = Number(play[k]);
       if (!Number.isNaN(v)) return Math.round(v / 60);
     }
@@ -100,24 +93,31 @@ function getSelectedNumbers(sel) {
    FILTROS
 ========================= */
 function buildFilterOptions() {
+  // anos
   const years = [...new Set(raw.plays.map(p => yearOf(p.playDate)).filter(Boolean))].sort();
   const yearSel = el("fYear");
   yearSel.querySelectorAll("option:not(:first-child)").forEach(o => o.remove());
   years.forEach(y => yearSel.append(new Option(y, y)));
 
+  // locais
   const locSel = el("fLocation");
   locSel.innerHTML = "";
+
   const usedLocIds = new Set(
-    raw.plays.map(p => p.locationRefId).filter(v => v !== undefined && v !== null).map(String)
+    raw.plays.map(p => p.locationRefId)
+      .filter(v => v !== undefined && v !== null && v !== "")
+      .map(String)
   );
 
   const locs = [];
   raw.locationsById.forEach((v, k) => {
     if (usedLocIds.has(String(k))) locs.push([k, v?.name || `Local ${k}`]);
   });
+
   locs.sort((a,b) => String(a[1]).localeCompare(String(b[1])));
   locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
 
+  // jogadores
   const plSel = el("fPlayers");
   plSel.innerHTML = "";
   raw.players
@@ -127,33 +127,38 @@ function buildFilterOptions() {
 }
 
 function applyFilters() {
-  const locSelected = getSelectedValues(el("fLocation"));
-  const locMode = getMode("locMode");
+  const locSelected = getSelectedValues(el("fLocation")); // strings
+  const locMode = getMode("locMode");                     // OR/AND
 
   const year = el("fYear").value || null;
 
   const minT = el("fMinTime").value !== "" ? Number(el("fMinTime").value) : null;
   const maxT = el("fMaxTime").value !== "" ? Number(el("fMaxTime").value) : null;
 
-  const plSelected = getSelectedNumbers(el("fPlayers"));
-  const plMode = getMode("plMode");
+  const plSelected = getSelectedNumbers(el("fPlayers"));  // numbers
+  const plMode = getMode("plMode");                       // OR/AND
 
   filteredPlays = raw.plays.filter(play => {
+    // ano
     if (year && yearOf(play.playDate) !== year) return false;
 
+    // tempo
     const dur = durationMin(play);
     if (minT !== null && (dur === null || dur < minT)) return false;
     if (maxT !== null && (dur === null || dur > maxT)) return false;
 
+    // local
     if (locSelected.length) {
       const locId = String(play.locationRefId ?? "");
       if (locMode === "OR") {
         if (!locSelected.includes(locId)) return false;
       } else {
+        // uma partida só tem 1 local; AND com 2+ é impossível
         if (locSelected.length !== 1 || locSelected[0] !== locId) return false;
       }
     }
 
+    // jogadores
     if (plSelected.length) {
       const ids = new Set((play.playerScores || []).map(ps => ps.playerRefId));
       if (plMode === "OR") {
@@ -185,10 +190,15 @@ function renderPartidas() {
     data: toISOish(p.playDate),
     ano: yearOf(p.playDate),
     jogo: raw.gamesById.get(p.gameRefId)?.name || `Game ${p.gameRefId}`,
-    local: raw.locationsById.get(p.locationRefId)?.name || p.locationRefId,
+    local: raw.locationsById.get(p.locationRefId)?.name || (p.locationRefId ?? ""),
     tempo: durationMin(p) ?? "",
-    jogadores: (p.playerScores||[]).map(ps => raw.playersById.get(ps.playerRefId)?.name).join(", "),
-    vencedores: (p.playerScores||[]).filter(ps => ps.winner).map(ps => raw.playersById.get(ps.playerRefId)?.name).join(", "),
+    jogadores: (p.playerScores||[])
+      .map(ps => raw.playersById.get(ps.playerRefId)?.name || `Player ${ps.playerRefId}`)
+      .join(", "),
+    vencedores: (p.playerScores||[])
+      .filter(ps => ps.winner)
+      .map(ps => raw.playersById.get(ps.playerRefId)?.name || `Player ${ps.playerRefId}`)
+      .join(", "),
     rating: p.rating ?? ""
   }));
 
@@ -225,7 +235,7 @@ function renderPartidas() {
 }
 
 /* =========================
-   RENDER – JOGADORES (ORDEM NOVA)
+   RENDER – JOGADORES (ORDEM: Jogador, Partidas, Jogos dif., Tempo, Vitórias, Winrate)
 ========================= */
 function renderJogadores() {
   destroyTable();
@@ -281,8 +291,13 @@ function renderJogadores() {
   });
 }
 
+/* =========================
+   RENDER MASTER (FIX: aplica filtros sempre!)
+========================= */
 function render() {
-  view === "jogadores" ? renderJogadores() : renderPartidas();
+  applyFilters();
+  if (view === "jogadores") renderJogadores();
+  else renderPartidas();
 }
 
 /* =========================
