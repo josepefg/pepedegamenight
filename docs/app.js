@@ -1,5 +1,17 @@
 const JSON_PATH = "data/bgstats.json";
 
+const DEFAULTS = {
+  year: "2025",                 // ex: "2025" ou "" para todos
+  minTime: "",              // ex: "30"
+  maxTime: "",              // ex: "180"
+  locMode: "OR",            // "OR" ou "AND"
+  plMode: "OR",             // "OR" ou "AND"
+  locations: ["2", "3"],            // ex: ["1","3"] (ids do local)
+  players: ["2", "3"],              // ex: ["12","33"] (ids dos jogadores, como string)
+  view: "partidas",         // "partidas" | "jogadores" | "jogos"
+  rememberLast: true        // se true, usa localStorage por padrão
+};
+
 let raw = null;
 let filteredPlays = [];
 let table = null;
@@ -10,6 +22,67 @@ const el = (id) => document.getElementById(id);
 /* =========================
    HELPERS
 ========================= */
+const STORAGE_KEY = "bgstats_filters_v1";
+
+function setRadio(name, value) {
+  const elRadio = document.querySelector(`input[name="${name}"][value="${value}"]`);
+  if (elRadio) elRadio.checked = true;
+}
+
+function setMultiSelect(selectEl, values) {
+  const set = new Set((values || []).map(String));
+  [...selectEl.options].forEach(o => { o.selected = set.has(String(o.value)); });
+}
+
+function readFiltersFromUI() {
+  return {
+    year: el("fYear").value || "",
+    minTime: el("fMinTime").value || "",
+    maxTime: el("fMaxTime").value || "",
+    locMode: getMode("locMode"),
+    plMode: getMode("plMode"),
+    locations: [...el("fLocation").selectedOptions].map(o => String(o.value)),
+    players: [...el("fPlayers").selectedOptions].map(o => String(o.value)),
+    view
+  };
+}
+
+function applyFiltersToUI(state) {
+  el("fYear").value = state.year ?? "";
+  el("fMinTime").value = state.minTime ?? "";
+  el("fMaxTime").value = state.maxTime ?? "";
+  setRadio("locMode", state.locMode || "OR");
+  setRadio("plMode", state.plMode || "OR");
+  setMultiSelect(el("fLocation"), state.locations || []);
+  setMultiSelect(el("fPlayers"), state.players || []);
+}
+
+function saveFilters() {
+  if (!DEFAULTS.rememberLast) return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(readFiltersFromUI()));
+}
+
+function loadSavedFilters() {
+  if (!DEFAULTS.rememberLast) return null;
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function setActiveTab() {
+  // marca botão ativo
+  const btnPartidas = el("btnPartidas");
+  const btnJogadores = el("btnJogadores");
+  const btnJogos = el("btnJogos");
+
+  btnPartidas.classList.toggle("active", view === "partidas");
+  btnJogadores.classList.toggle("active", view === "jogadores");
+  btnJogos.classList.toggle("active", view === "jogos");
+}
+
+
 function destroyTable() {
   if (table) {
     table.destroy();
