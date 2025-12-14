@@ -48,14 +48,7 @@ function durationMin(play) {
     if (!Number.isNaN(v)) return Math.round(v);
   }
 
-  const minuteKeys = [
-    "durationMinutes",
-    "playTimeMinutes",
-    "playTime",
-    "length",
-    "duration",
-    "time"
-  ];
+  const minuteKeys = ["durationMinutes","playTimeMinutes","playTime","length","duration","time"];
   for (const k of minuteKeys) {
     if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
       const v = Number(play[k]);
@@ -63,7 +56,7 @@ function durationMin(play) {
     }
   }
 
-  const secondKeys = ["durationSec", "durationSeconds", "playTimeSeconds", "lengthSeconds"];
+  const secondKeys = ["durationSec","durationSeconds","playTimeSeconds","lengthSeconds"];
   for (const k of secondKeys) {
     if (play && play[k] !== undefined && play[k] !== null && play[k] !== "") {
       const v = Number(play[k]);
@@ -102,7 +95,6 @@ function buildFilterOptions() {
   // locais
   const locSel = el("fLocation");
   locSel.innerHTML = "";
-
   const usedLocIds = new Set(
     raw.plays.map(p => p.locationRefId)
       .filter(v => v !== undefined && v !== null && v !== "")
@@ -113,7 +105,6 @@ function buildFilterOptions() {
   raw.locationsById.forEach((v, k) => {
     if (usedLocIds.has(String(k))) locs.push([k, v?.name || `Local ${k}`]);
   });
-
   locs.sort((a,b) => String(a[1]).localeCompare(String(b[1])));
   locs.forEach(([k, name]) => locSel.append(new Option(name, String(k))));
 
@@ -127,16 +118,16 @@ function buildFilterOptions() {
 }
 
 function applyFilters() {
-  const locSelected = getSelectedValues(el("fLocation")); // strings
-  const locMode = getMode("locMode");                     // OR/AND
+  const locSelected = getSelectedValues(el("fLocation"));
+  const locMode = getMode("locMode");
 
   const year = el("fYear").value || null;
 
   const minT = el("fMinTime").value !== "" ? Number(el("fMinTime").value) : null;
   const maxT = el("fMaxTime").value !== "" ? Number(el("fMaxTime").value) : null;
 
-  const plSelected = getSelectedNumbers(el("fPlayers"));  // numbers
-  const plMode = getMode("plMode");                       // OR/AND
+  const plSelected = getSelectedNumbers(el("fPlayers"));
+  const plMode = getMode("plMode");
 
   filteredPlays = raw.plays.filter(play => {
     // ano
@@ -153,7 +144,6 @@ function applyFilters() {
       if (locMode === "OR") {
         if (!locSelected.includes(locId)) return false;
       } else {
-        // uma partida só tem 1 local; AND com 2+ é impossível
         if (locSelected.length !== 1 || locSelected[0] !== locId) return false;
       }
     }
@@ -181,7 +171,7 @@ function applyFilters() {
 }
 
 /* =========================
-   RENDER – PARTIDAS
+   RENDER – PARTIDAS (sem rating)
 ========================= */
 function renderPartidas() {
   destroyTable();
@@ -199,7 +189,6 @@ function renderPartidas() {
       .filter(ps => ps.winner)
       .map(ps => raw.playersById.get(ps.playerRefId)?.name || `Player ${ps.playerRefId}`)
       .join(", "),
-    rating: p.rating ?? ""
   }));
 
   window.jQuery("#tabela").append(`
@@ -212,7 +201,6 @@ function renderPartidas() {
         <th>Tempo (min)</th>
         <th>Jogadores</th>
         <th>Vencedores</th>
-        <th>Rating</th>
       </tr>
     </thead>
   `);
@@ -227,7 +215,6 @@ function renderPartidas() {
       { data: "tempo" },
       { data: "jogadores" },
       { data: "vencedores" },
-      { data: "rating" },
     ],
     pageLength: 25,
     order: [[0, "desc"]],
@@ -235,7 +222,7 @@ function renderPartidas() {
 }
 
 /* =========================
-   RENDER – JOGADORES (ORDEM: Jogador, Partidas, Jogos dif., Tempo, Vitórias, Winrate)
+   RENDER – JOGADORES (ordem pedida)
 ========================= */
 function renderJogadores() {
   destroyTable();
@@ -292,11 +279,66 @@ function renderJogadores() {
 }
 
 /* =========================
-   RENDER MASTER (FIX: aplica filtros sempre!)
+   RENDER – JOGOS (nova aba)
+========================= */
+function renderJogos() {
+  destroyTable();
+
+  const agg = new Map();
+
+  for (const play of filteredPlays) {
+    const gameId = play.gameRefId;
+    if (gameId == null) continue;
+
+    if (!agg.has(gameId)) {
+      agg.set(gameId, {
+        jogo: raw.gamesById.get(gameId)?.name || `Game ${gameId}`,
+        partidas: 0,
+        tempoMin: 0,
+        jogadoresUnicos: new Set(),
+      });
+    }
+
+    const s = agg.get(gameId);
+    s.partidas += 1;
+
+    const dur = durationMin(play);
+    if (dur != null) s.tempoMin += dur;
+
+    for (const ps of (play.playerScores || [])) {
+      if (ps.playerRefId != null) s.jogadoresUnicos.add(String(ps.playerRefId));
+    }
+  }
+
+  const rows = [...agg.values()].map(s => ({
+    jogo: s.jogo,
+    partidas: s.partidas,
+    tempo_total_h: (s.tempoMin / 60).toFixed(1),
+    tempo_medio_min: s.partidas ? (s.tempoMin / s.partidas).toFixed(0) : "0",
+    jogadores_unicos: s.jogadoresUnicos.size,
+  }));
+
+  table = new DataTable("#tabela", {
+    data: rows,
+    columns: [
+      { title: "Jogo", data: "jogo" },
+      { title: "Partidas", data: "partidas" },
+      { title: "Tempo total (h)", data: "tempo_total_h" },
+      { title: "Tempo médio (min)", data: "tempo_medio_min" },
+      { title: "Jogadores únicos", data: "jogadores_unicos" },
+    ],
+    pageLength: 25,
+    order: [[1, "desc"]],
+  });
+}
+
+/* =========================
+   RENDER MASTER
 ========================= */
 function render() {
   applyFilters();
   if (view === "jogadores") renderJogadores();
+  else if (view === "jogos") renderJogos();
   else renderPartidas();
 }
 
@@ -304,17 +346,31 @@ function render() {
    UI / INIT
 ========================= */
 function wireUI() {
-  el("btnPartidas").onclick = () => {
+  const btnPartidas = el("btnPartidas");
+  const btnJogadores = el("btnJogadores");
+  const btnJogos = el("btnJogos");
+
+  btnPartidas.onclick = () => {
     view = "partidas";
-    el("btnPartidas").classList.add("active");
-    el("btnJogadores").classList.remove("active");
+    btnPartidas.classList.add("active");
+    btnJogadores.classList.remove("active");
+    btnJogos.classList.remove("active");
     render();
   };
 
-  el("btnJogadores").onclick = () => {
+  btnJogadores.onclick = () => {
     view = "jogadores";
-    el("btnJogadores").classList.add("active");
-    el("btnPartidas").classList.remove("active");
+    btnJogadores.classList.add("active");
+    btnPartidas.classList.remove("active");
+    btnJogos.classList.remove("active");
+    render();
+  };
+
+  btnJogos.onclick = () => {
+    view = "jogos";
+    btnJogos.classList.add("active");
+    btnPartidas.classList.remove("active");
+    btnJogadores.classList.remove("active");
     render();
   };
 
