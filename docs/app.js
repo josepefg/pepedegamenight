@@ -5,7 +5,7 @@ const JSON_PATH = "data/bgstats.json";
 ========================= */
 const DEFAULTS = {
   view: "jogadores",
-  year: "2025",
+  year: "2026",
   plMode: "OR",
   locations: ["2", "6"],
   players: ["2", "3"],
@@ -601,3 +601,4 @@ async function init() {
 }
 
 init();
+
